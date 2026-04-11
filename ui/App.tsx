@@ -930,6 +930,8 @@ function RenamePage() {
     const [addlangue, setAddlangue] = useState('false');
     const [noversion, setNoversion] = useState('false');
     const [dlcrname, setDlcrname] = useState('false');
+    const [optionsTab, setOptionsTab] = useState<'basic' | 'advanced'>('basic');
+    const lastVersionOnRef = useRef('false'); // preserves last non-'true' noversion across chip toggle
     const [nutdbTitleId, setNutdbTitleId] = useState('');
     const [proxy, setProxy] = useState('');
     const [nutdbUrl, setNutdbUrl] = useState('');
@@ -1004,50 +1006,142 @@ function RenamePage() {
             <div className="card">
                 <div className="card-header">
                     <span className="card-title">Rename Options</span>
-                </div>
-                <div className="options-panel">
-                    <div className="option-group">
-                        <label className="option-label">Rename Mode</label>
-                        <select value={renmode} onChange={(e) => setRenmode(e.target.value)}>
-                            <option value="force">Force</option>
-                            <option value="skip_corr_tid">Skip Correct TID</option>
-                            <option value="skip_if_tid">Skip If TID</option>
-                        </select>
-                        <span className="option-description">
-                            {renmode === 'force' ? 'Always rename files' : renmode === 'skip_corr_tid' ? 'Skip files with correct title ID in name' : 'Skip files that already contain a title ID'}
-                        </span>
-                    </div>
-                    <div className="option-group">
-                        <label className="option-label">Add Language</label>
-                        <select value={addlangue} onChange={(e) => setAddlangue(e.target.value)}>
-                            <option value="false">No</option>
-                            <option value="true">Yes</option>
-                        </select>
-                        <span className="option-description">Include language information in filename</span>
-                    </div>
-                    <div className="option-group">
-                        <label className="option-label">Version Handling</label>
-                        <select value={noversion} onChange={(e) => setNoversion(e.target.value)}>
-                            <option value="false">Include version</option>
-                            <option value="true">Exclude version</option>
-                            <option value="xci_no_v0">Exclude v0 for XCI</option>
-                        </select>
-                        <span className="option-description">
-                            {noversion === 'false' ? 'Include version number in filename' : noversion === 'true' ? 'Omit version number from filename' : 'Omit v0 for XCI files only'}
-                        </span>
-                    </div>
-                    <div className="option-group">
-                        <label className="option-label">DLC Rename</label>
-                        <select value={dlcrname} onChange={(e) => setDlcrname(e.target.value)}>
-                            <option value="false">No</option>
-                            <option value="true">Yes</option>
-                            <option value="tag">Tag only</option>
-                        </select>
-                        <span className="option-description">
-                            {dlcrname === 'false' ? 'Do not rename DLC files' : dlcrname === 'true' ? 'Rename DLC files with full name' : 'Append DLC tag to filename'}
-                        </span>
+                    <div className="card-tab-bar">
+                        <button className={`card-tab-btn${optionsTab === 'basic' ? ' active' : ''}`} onClick={() => setOptionsTab('basic')}>Basic</button>
+                        <button className={`card-tab-btn${optionsTab === 'advanced' ? ' active' : ''}`} onClick={() => setOptionsTab('advanced')}>Advanced</button>
                     </div>
                 </div>
+                {optionsTab === 'basic' ? (
+                    <div className="options-panel">
+                        <div className="option-group">
+                            <label className="option-label">Rename Mode</label>
+                            <select value={renmode} onChange={(e) => setRenmode(e.target.value)}>
+                                <option value="force">Force</option>
+                                <option value="skip_corr_tid">Skip Correct TID</option>
+                                <option value="skip_if_tid">Skip If TID</option>
+                            </select>
+                            <span className="option-description">
+                                {renmode === 'force' ? 'Always rename files' : renmode === 'skip_corr_tid' ? 'Skip files with correct title ID in name' : 'Skip files that already contain a title ID'}
+                            </span>
+                        </div>
+                        <div className="option-group">
+                            <label className="option-label">Add Language</label>
+                            <select value={addlangue} onChange={(e) => setAddlangue(e.target.value)}>
+                                <option value="false">No</option>
+                                <option value="true">Yes</option>
+                            </select>
+                            <span className="option-description">Include language information in filename</span>
+                        </div>
+                        <div className="option-group">
+                            <label className="option-label">Version Handling</label>
+                            <select value={noversion} onChange={(e) => { if (e.target.value !== 'true') lastVersionOnRef.current = e.target.value; setNoversion(e.target.value); }}>
+                                <option value="false">Include version</option>
+                                <option value="true">Exclude version</option>
+                                <option value="xci_no_v0">Exclude v0 for XCI</option>
+                            </select>
+                            <span className="option-description">
+                                {noversion === 'false' ? 'Include version number in filename' : noversion === 'true' ? 'Omit version number from filename' : 'Omit v0 for XCI files only'}
+                            </span>
+                        </div>
+                        <div className="option-group">
+                            <label className="option-label">DLC Rename</label>
+                            <select value={dlcrname} onChange={(e) => setDlcrname(e.target.value)}>
+                                <option value="false">No</option>
+                                <option value="true">Yes</option>
+                                <option value="tag">Tag only</option>
+                            </select>
+                            <span className="option-description">
+                                {dlcrname === 'false' ? 'Do not rename DLC files' : dlcrname === 'true' ? 'Rename DLC files with full name' : 'Append DLC tag to filename'}
+                            </span>
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ padding: '16px' }}>
+                        <div className="fname-parts">
+                            <div className="fname-part fp-locked" title="Always included — Language and DLC naming affect this portion">
+                                Game Name
+                                {addlangue === 'true' && <span className="fname-modifier">+Lang</span>}
+                                {dlcrname !== 'false' && <span className="fname-modifier">+DLC</span>}
+                            </div>
+                            <span className="fname-sep">·</span>
+                            <div className="fname-part fp-locked" title="Always included">[TitleID]</div>
+                            <span className="fname-sep">·</span>
+                            <div
+                                className={`fname-part ${noversion !== 'true' ? 'fp-on' : 'fp-off'}`}
+                                onClick={() => {
+                                    if (noversion !== 'true') {
+                                        lastVersionOnRef.current = noversion;
+                                        setNoversion('true');
+                                    } else {
+                                        setNoversion(lastVersionOnRef.current);
+                                    }
+                                }}
+                                title={noversion !== 'true' ? 'Click to exclude version' : 'Click to include version'}
+                            >
+                                [vVersion]
+                            </div>
+                        </div>
+
+                        <div className="options-panel" style={{ paddingTop: 0 }}>
+                            <div className="option-group">
+                                <Toggle checked={addlangue === 'true'} onChange={v => setAddlangue(v ? 'true' : 'false')} label="Language" />
+                                <span className="option-description">Append supported languages to the game name</span>
+                            </div>
+                            <div className="option-group">
+                                <label className="option-label">DLC Naming</label>
+                                <div className="seg-ctrl">
+                                    <button className={`seg-btn${dlcrname === 'false' ? ' active' : ''}`} onClick={() => setDlcrname('false')}>Off</button>
+                                    <button className={`seg-btn${dlcrname === 'true' ? ' active' : ''}`} onClick={() => setDlcrname('true')}>Full name</button>
+                                    <button className={`seg-btn${dlcrname === 'tag' ? ' active' : ''}`} onClick={() => setDlcrname('tag')}>Tag mode</button>
+                                </div>
+                                <span className="option-description">
+                                    {dlcrname === 'false' ? 'DLC files are not renamed' : dlcrname === 'true' ? 'DLC files renamed using resolved name from metadata or NUTDB' : 'Resolved name used where available; [DLC N] tag always appended'}
+                                </span>
+                            </div>
+                            {noversion !== 'true' && (
+                                <div className="option-group">
+                                    <label className="option-label">Version — XCI v0</label>
+                                    <select value={noversion} onChange={(e) => { lastVersionOnRef.current = e.target.value; setNoversion(e.target.value); }}>
+                                        <option value="false">Include v0</option>
+                                        <option value="xci_no_v0">Omit v0 for XCI</option>
+                                    </select>
+                                    <span className="option-description">Whether to include v0 in XCI filenames</span>
+                                </div>
+                            )}
+                            <div className="option-group">
+                                <label className="option-label">Rename Mode</label>
+                                <select value={renmode} onChange={(e) => setRenmode(e.target.value)}>
+                                    <option value="force">Force</option>
+                                    <option value="skip_corr_tid">Skip Correct TID</option>
+                                    <option value="skip_if_tid">Skip If TID</option>
+                                </select>
+                                <span className="option-description">
+                                    {renmode === 'force' ? 'Always rename files' : renmode === 'skip_corr_tid' ? 'Skip files with correct title ID in name' : 'Skip files that already contain a title ID'}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="fname-preview-label" style={{ marginTop: 12 }}>Format preview</div>
+                        <div className="fname-preview">
+                            {dlcrname === 'false'
+                                ? <><span>GameName</span>
+                                   {addlangue === 'true' && <span className="fp-hi"> [EN,FR]</span>}
+                                  </>
+                                : <><span className="fp-hi">DLC Name</span>
+                                   {dlcrname === 'tag' && <span className="fp-hi"> [DLC 2]</span>}
+                                  </>
+                            }
+                            <span> [0100847008600000]</span>
+                            {noversion !== 'true' && <span className="fp-hi"> [v131072]</span>}
+                            <span>.nsp</span>
+                        </div>
+                        {dlcrname !== 'false' && (
+                            <span className="option-description" style={{ display: 'block', marginTop: 6 }}>
+                                Name segment depends on available metadata and rename mode
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
 
             <div className="card">

@@ -1,6 +1,6 @@
 {
   "productName": "NSCB Desktop",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "identifier": "com.nscb.desktop",
   "build": {
     "frontendDist": "../dist",

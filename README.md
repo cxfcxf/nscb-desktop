@@ -13,7 +13,7 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 - Convert between NSP and XCI
 - Split multi-title files into per-title folders or individual NSP/XCI files
 - Create/Repack NSP from split folders
-- Rename files using embedded metadata + NUTDB lookup (with rename mode, language, version, DLC controls)
+- Rename files using package metadata + NUTDB lookup, with Basic/Advanced controls for rename mode, language, version handling, and DLC naming
 - NUTDB utilities: refresh cache, look up title IDs
 - Verify container integrity (NSP, NSX, NSZ, XCI, XCZ) at three levels: decryption (lv1), signature (lv2), or full (lv3)
 - View file info (content details and metadata summary)
@@ -49,6 +49,13 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 2. On first launch, the setup wizard prompts you to import **encryption keys** (`prod.keys` or `keys.txt`).
 3. If the nscb_rust backend is missing, a banner directs you to **Settings > Tools** where you can download it from GitHub or import manually.
 4. Pick an operation from the sidebar and drop your files.
+
+### Rename Notes
+
+- Basic and Advanced views share the same rename state.
+- DLC Naming modes: `Off`, `Full name`, `Tag mode`.
+- `Tag mode` appends `[DLC N]`; depending on metadata and rename mode, a resolved DLC name may still be used.
+- The preview reflects backend-supported rename behavior; custom filename ordering is not currently supported.
 
 ## Development
 
