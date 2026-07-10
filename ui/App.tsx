@@ -1289,12 +1289,14 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
     const [checkingUpdate, setCheckingUpdate] = useState(false);
     const [proxy, setProxy] = useState('');
     const [nutdbUrl, setNutdbUrl] = useState('');
+    const [tempDir, setTempDir] = useState('');
 
     useEffect(() => {
         api.getInstalledVersion().then(setBackendVersion);
         api.hasKeys().then(setKeysInstalled);
         api.getSetting('proxy').then(setProxy);
         api.getSetting('nutdbUrl').then(setNutdbUrl);
+        api.getSetting('tempDir').then(setTempDir);
     }, []);
 
     const handleCheckUpdate = async () => {
@@ -1337,6 +1339,14 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
     const handleImportKeys = async () => {
         const result = await api.importKeys();
         if (result.ok) setKeysInstalled(true);
+    };
+
+    const handleSelectTempDir = async () => {
+        const dir = await api.selectOutputDir();
+        if (dir) {
+            setTempDir(dir);
+            await api.saveSetting('tempDir', dir);
+        }
     };
 
     return (
@@ -1386,6 +1396,39 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
                             <button className="btn btn-secondary btn-sm" onClick={handleImportKeys}>
                                 {Icons.key} Import Keys
                             </button>
+                        </div>
+                    </div>
+
+                    <div className="settings-row">
+                        <div className="settings-row-label">
+                            <h4>Temporary Directory</h4>
+                            <p>Large working files for compression, decompression, merge, and rename. Leave blank to use the OS default.</p>
+                        </div>
+                        <div className="settings-row-control">
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    placeholder="OS default temporary directory"
+                                    value={tempDir}
+                                    onChange={(e) => setTempDir(e.target.value)}
+                                    onBlur={() => api.saveSetting('tempDir', tempDir.trim())}
+                                />
+                                <button className="btn btn-secondary btn-sm" onClick={handleSelectTempDir}>
+                                    Browse
+                                </button>
+                                {tempDir && (
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => {
+                                            setTempDir('');
+                                            void api.saveSetting('tempDir', '');
+                                        }}
+                                    >
+                                        Reset
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

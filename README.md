@@ -24,6 +24,7 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 - Auto-download nscb_rust backend from GitHub releases, or import manually
 - Proxy support for NUTDB downloads (URL prefix proxy for users behind firewalls)
 - Configurable NUTDB source URL override
+- Configurable temporary directory for large backend working files
 - First-launch setup wizard for encryption keys
 - Cross-platform: Windows x86_64, Linux x86_64, macOS ARM64
 
@@ -49,6 +50,8 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 2. On first launch, the setup wizard prompts you to import **encryption keys** (`prod.keys` or `keys.txt`).
 3. If the nscb_rust backend is missing, a banner directs you to **Settings > Tools** where you can download it from GitHub or import manually.
 4. Pick an operation from the sidebar and drop your files.
+
+If the system temporary drive is short on space, open **Settings > Tools > Temporary Directory** and select a directory on a larger drive. Leave it blank to keep using the operating system default.
 
 ### Rename Notes
 

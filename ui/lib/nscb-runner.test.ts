@@ -44,6 +44,19 @@ describe('SINGLE_FILE_OPS', () => {
 
 // ─── Compress tab ───────────────────────────────────────────────
 
+describe('custom temporary directory', () => {
+    it('passes --temp-dir when configured', () => {
+        const args = buildArgs('compress', ['H:/game.nsp'], { tempDir: 'D:/NSCB Temp' }, KEYS);
+        expect(args).toContain('--temp-dir');
+        expect(args[args.indexOf('--temp-dir') + 1]).toBe('D:/NSCB Temp');
+    });
+
+    it('uses the OS default when no directory is configured', () => {
+        expect(buildArgs('compress', ['H:/game.nsp'], { tempDir: '' }, KEYS))
+            .not.toContain('--temp-dir');
+    });
+});
+
 describe('compress', () => {
     it('single file with default options', () => {
         expect(buildArgs('compress', ['H:/game.nsp'], {}, KEYS)).toEqual([

@@ -125,6 +125,8 @@ export function buildArgs(operation: string, files: string[], options: Record<st
 
     if (options.buffer) args.push('-b', String(options.buffer));
 
+    if (options.tempDir) args.push('--temp-dir', options.tempDir);
+
     if (keysPath) args.push('--keys', keysPath);
 
     return args;
@@ -229,7 +231,8 @@ export class NscbRunner extends Emitter {
         const keysPath = (operation !== 'nutdb-refresh' && operation !== 'nutdb-lookup')
             ? await this.resolveKeysPath()
             : null;
-        return buildArgs(operation, files, options, keysPath);
+        const tempDir = await invoke<string>('get_setting', { key: 'tempDir' }).catch(() => '');
+        return buildArgs(operation, files, { ...options, tempDir }, keysPath);
     }
 
     private computeVerifyOutputPath(filelistPath: string): string {
