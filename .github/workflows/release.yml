@@ -85,8 +85,35 @@ jobs:
         if: matrix.label == 'linux'
         run: |
           mkdir -p staged
-          cp src-tauri/target/release/bundle/appimage/*.AppImage staged/nscb-desktop-linux-amd64.AppImage
           cp src-tauri/target/release/bundle/deb/*.deb staged/nscb-desktop-linux-amd64.deb
+
+          # Repack the AppImage without the bundled Wayland client libraries.
+          # linuxdeploy already excludes the host-coupled GL/EGL/DRM/X11 stack but
+          # not libwayland-*. A bundled libwayland-client older than the host's Mesa
+          # makes WebKitWebProcess abort with "EGL_BAD_PARAMETER" (blank window).
+          # Dropping them lets the host copies load. See cxfcxf/nscb-desktop#21.
+          src_appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage)
+          rm -rf squashfs-root
+          "$src_appimage" --appimage-extract >/dev/null
+          rm -f squashfs-root/usr/lib/libwayland-client.so.* \
+                squashfs-root/usr/lib/libwayland-cursor.so.* \
+                squashfs-root/usr/lib/libwayland-egl.so.* \
+                squashfs-root/usr/lib/libwayland-server.so.*
+
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run --no-appstream \
+            squashfs-root staged/nscb-desktop-linux-amd64.AppImage
+
+          # Guard: fail if the offending libraries survived the repack.
+          rm -rf squashfs-root
+          ./staged/nscb-desktop-linux-amd64.AppImage --appimage-extract >/dev/null
+          if ls squashfs-root/usr/lib/libwayland-* >/dev/null 2>&1; then
+            echo "ERROR: bundled libwayland-* still present in repacked AppImage" >&2
+            exit 1
+          fi
+          rm -rf squashfs-root
 
       - name: Stage artifact (macOS)
         if: matrix.label == 'macos'
