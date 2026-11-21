@@ -1,5 +1,7 @@
 # NSCB Desktop
 
+[中文](README.zh-CN.md) | **English**
+
 Modern desktop GUI for Nintendo Switch game file operations: compress, decompress, merge, convert, split, repack, rename, and verify (NSP, XCI, NSZ, XCZ, NCZ).
 
 Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cxfcxf/nscb_rust).
@@ -25,6 +27,7 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 - Proxy support for NUTDB downloads (URL prefix proxy for users behind firewalls)
 - Configurable NUTDB source URL override
 - Configurable temporary directory for large backend working files
+- Internationalization with a first-launch language picker and full Simplified Chinese support
 - First-launch setup wizard for encryption keys
 - Cross-platform: Windows x86_64, Linux x86_64, macOS ARM64
 
@@ -47,9 +50,12 @@ Built with Tauri v2 + React + Vite. Powered by [nscb_rust](https://github.com/cx
 ## Usage
 
 1. Run the app directly (standalone portable exe), or use the platform installer.
-2. On first launch, the setup wizard prompts you to import **encryption keys** (`prod.keys` or `keys.txt`).
-3. If the nscb_rust backend is missing, a banner directs you to **Settings > Tools** where you can download it from GitHub or import manually.
-4. Pick an operation from the sidebar and drop your files.
+2. On first launch, pick an interface language (**English** or **简体中文**).
+3. The setup wizard then prompts you to import **encryption keys** (`prod.keys` or `keys.txt`).
+4. If the nscb_rust backend is missing, a banner directs you to **Settings > Tools** where you can download it from GitHub or import manually.
+5. Pick an operation from the sidebar and drop your files.
+
+The language choice is stored in the app settings and can be changed any time under **Settings > General > Language**.
 
 If the system temporary drive is short on space, open **Settings > Tools > Temporary Directory** and select a directory on a larger drive. Leave it blank to keep using the operating system default.
 
