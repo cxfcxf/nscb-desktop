@@ -1412,25 +1412,25 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
                 </div>
             </div>
 
-            {/* 通用：语言 */}
-            <div className="settings-section">
-                <h3 className="settings-section-title">{t('settings.sectionGeneral')}</h3>
-                <div className="settings-row">
-                    <div className="settings-row-label">
-                        <h4>{t('settings.languageTitle')}</h4>
-                        <p>{t('settings.languageDesc')}</p>
-                    </div>
-                    <div className="settings-row-control">
-                        <select value={language} onChange={(e) => handleChangeLanguage(e.target.value as Locale)}>
-                            {LOCALES.map(loc => (
-                                <option key={loc} value={loc}>{LOCALE_META[loc].label}</option>
-                            ))}
-                        </select>
+            <div className="settings-grid">
+                {/* 通用：语言 */}
+                <div className="settings-section">
+                    <h3 className="settings-section-title">{t('settings.sectionGeneral')}</h3>
+                    <div className="settings-row">
+                        <div className="settings-row-label">
+                            <h4>{t('settings.languageTitle')}</h4>
+                            <p>{t('settings.languageDesc')}</p>
+                        </div>
+                        <div className="settings-row-control">
+                            <select value={language} onChange={(e) => handleChangeLanguage(e.target.value as Locale)}>
+                                {LOCALES.map(loc => (
+                                    <option key={loc} value={loc}>{LOCALE_META[loc].label}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="settings-grid">
                 <div className="settings-section">
                     <h3 className="settings-section-title">{t('settings.sectionTools')}</h3>
 
