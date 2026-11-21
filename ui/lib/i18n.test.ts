@@ -14,6 +14,10 @@ describe('normalizeLocale', () => {
     it('接受受支持的语言标签', () => {
         expect(normalizeLocale('en')).toBe('en');
         expect(normalizeLocale('en-US')).toBe('en');
+        expect(normalizeLocale('zh-CN')).toBe('zh-CN');
+        expect(normalizeLocale('zh-Hans')).toBe('zh-CN');
+        expect(normalizeLocale('zh')).toBe('zh-CN');
+        expect(normalizeLocale('ZH-cn')).toBe('zh-CN');
     });
 
     it('对空值和不支持的标签返回 null', () => {
@@ -26,28 +30,35 @@ describe('normalizeLocale', () => {
 describe('translate', () => {
     it('按当前语言返回译文', () => {
         expect(translate('en', 'nav.compress')).toBe('Compress');
+        expect(translate('zh-CN', 'nav.compress')).toBe('压缩');
     });
 
     it('支持占位符插值', () => {
         expect(translate('en', 'settings.backendInstalled', { version: 'v1.2.3' })).toBe('Installed: v1.2.3');
+        expect(translate('zh-CN', 'batch.startLabel', { count: 3 })).toBe('开始批量合并（3）');
     });
 
-    it('键缺失时回退到键名，避免界面空白', () => {
-        expect(translate('en', '__missing_key__')).toBe('__missing_key__');
+    it('键缺失时回退到英文，再回退到键名', () => {
+        // 该键只存在于中文表，用于验证回退方向
+        expect(translate('zh-CN', '__missing_key__')).toBe('__missing_key__');
+        expect(translate('en', 'rename.dlcOffShort')).toBe('Off');
     });
 
-    it('关键导航文案已提供', () => {
-        const keys = ['nav.compress', 'nav.rename', 'nav.settings', 'settings.languageTitle'];
+    it('两种语言的关键导航文案都已提供', () => {
+        const keys = ['nav.compress', 'nav.rename', 'nav.settings', 'settings.languageTitle', 'lang.confirm'];
         for (const key of keys) {
             expect(translate('en', key)).not.toBe(key);
+            expect(translate('zh-CN', key)).not.toBe(key);
         }
     });
 });
 
 describe('pluralSuffix', () => {
-    it('英文按数量决定 s', () => {
+    it('英文按数量决定 s，中文不变', () => {
         expect(pluralSuffix('en', 1)).toBe('');
         expect(pluralSuffix('en', 2)).toBe('s');
+        expect(pluralSuffix('zh-CN', 1)).toBe('');
+        expect(pluralSuffix('zh-CN', 5)).toBe('');
     });
 });
 
@@ -64,9 +75,11 @@ describe('locale runtime', () => {
     it('setLocale 立即更新内存状态并通知订阅者', async () => {
         const seen: Locale[] = [];
         const unsub = subscribeLocale(l => seen.push(l));
-        await setLocale('en');
-        expect(getLocale()).toBe('en');
-        expect(seen).toContain('en');
+        await setLocale('zh-CN');
+        expect(getLocale()).toBe('zh-CN');
+        expect(seen).toContain('zh-CN');
         unsub();
+        // 恢复默认，避免影响其他用例
+        await setLocale('en');
     });
 });

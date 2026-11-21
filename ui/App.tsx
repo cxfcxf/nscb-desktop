@@ -2218,9 +2218,11 @@ function MissingBackendBanner({ onGoToSettings }: { onGoToSettings: () => void }
 // ============================================================
 
 function LanguagePickerPage({ onConfirm }: { onConfirm: () => void }) {
-    // 当前仅支持英文；此处保留选择页结构，后续增加语言时直接扩展 LOCALES
-    const [selected, setSelected] = useState<Locale>('en');
+    // 默认选中简体中文，并立即以该语言渲染本页，保证高亮与文案一致
+    const [selected, setSelected] = useState<Locale>('zh-CN');
     const t = useT();
+
+    useEffect(() => { previewLocale('zh-CN'); }, []);
 
     // 点选即预览该语言，界面立即跟随
     const handleSelect = (locale: Locale) => {
