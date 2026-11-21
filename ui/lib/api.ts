@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { readDir, rename as fsRename } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { getLocale, translate } from './i18n';
 
 let cachedToolsDir: string | null = null;
 
@@ -41,12 +42,14 @@ export async function hasBackend(): Promise<boolean> {
 }
 
 export async function importKeys(): Promise<{ ok: boolean; error?: string }> {
+    // 对话框标题/过滤器跟随界面语言
+    const locale = getLocale();
     const selected = await open({
-        title: 'Select your encryption keys file',
+        title: translate(locale, 'setup.selectKeysTitle'),
         multiple: false,
         filters: [
-            { name: 'Keys Files', extensions: ['keys', 'txt'] },
-            { name: 'All Files', extensions: ['*'] },
+            { name: translate(locale, 'setup.selectKeysFilter'), extensions: ['keys', 'txt'] },
+            { name: translate(locale, 'setup.selectAll'), extensions: ['*'] },
         ],
     });
     if (!selected) return { ok: false };
@@ -56,13 +59,14 @@ export async function importKeys(): Promise<{ ok: boolean; error?: string }> {
         await invoke('import_keys', { srcPath: srcFile });
         return { ok: true };
     } catch (e: any) {
-        return { ok: false, error: `Failed to copy keys: ${e.message || e}` };
+        return { ok: false, error: translate(getLocale(), 'setup.failedCopyKeys', { error: e.message || e }) };
     }
 }
 
 export async function importBackend(): Promise<{ ok: boolean; error?: string }> {
+    // 对话框标题跟随界面语言
     const selected = await open({
-        title: 'Select nscb_rust backend binary',
+        title: translate(getLocale(), 'setup.selectBackendTitle'),
         multiple: false,
     });
     if (!selected) return { ok: false };
@@ -72,7 +76,7 @@ export async function importBackend(): Promise<{ ok: boolean; error?: string }> 
         await invoke('import_nscb_binary', { srcPath: srcFile });
         return { ok: true };
     } catch (e: any) {
-        return { ok: false, error: `Failed to import backend: ${e.message || e}` };
+        return { ok: false, error: translate(getLocale(), 'setup.failedImportBackend', { error: e.message || e }) };
     }
 }
 
@@ -82,11 +86,13 @@ export interface FileFilter {
 }
 
 export async function selectFiles(filters?: FileFilter[]): Promise<string[]> {
+    // 未提供过滤器时使用界面语言对应的默认过滤器
+    const locale = getLocale();
     const result = await open({
         multiple: true,
         filters: filters || [
-            { name: 'Switch Files', extensions: ['nsp', 'xci', 'nsz', 'xcz', 'ncz'] },
-            { name: 'All Files', extensions: ['*'] },
+            { name: translate(locale, 'setup.switchFiles'), extensions: ['nsp', 'xci', 'nsz', 'xcz', 'ncz'] },
+            { name: translate(locale, 'setup.selectAll'), extensions: ['*'] },
         ],
     });
     if (!result) return [];
