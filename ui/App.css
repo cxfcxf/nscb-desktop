@@ -1331,6 +1331,50 @@ select {
   color: var(--text-muted);
 }
 
+/* ---- Language Picker ---- */
+.lang-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  text-align: left;
+}
+
+.lang-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  width: 100%;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.lang-option:hover {
+  border-color: var(--accent-primary);
+  background: var(--bg-elevated);
+}
+
+.lang-option.selected {
+  border-color: var(--accent-primary);
+  background: rgba(0, 212, 170, 0.08);
+}
+
+.lang-native {
+  font-weight: 600;
+}
+
+.lang-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
 /* ---- Batch Merge ---- */
 .required-star {
   color: var(--accent-danger);

@@ -1,8 +1,22 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
 import * as api from './lib/api';
 import { getRunner } from './lib/nscb-runner';
+import {
+    useT,
+    initI18n,
+    setLocale,
+    previewLocale,
+    getLocale,
+    subscribeLocale,
+    loadSavedLocale,
+    pluralSuffix,
+    LOCALES,
+    LOCALE_META,
+    type Locale,
+} from './lib/i18n';
 
 // ============================================================
 // SVG Icons
@@ -48,11 +62,12 @@ const Icons = {
 // Helpers
 // ============================================================
 
-function levelLabel(level: number): string {
-    if (level <= 8) return 'Fast';
-    if (level <= 14) return 'Normal';
-    if (level <= 18) return 'Great';
-    return 'Ultra';
+// 返回压缩等级的 i18n 键，实际显示文本由调用方翻译
+function levelLabelKey(level: number): string {
+    if (level <= 8) return 'level.fast';
+    if (level <= 14) return 'level.normal';
+    if (level <= 18) return 'level.great';
+    return 'level.ultra';
 }
 
 function getFileExt(path: string): string {
@@ -108,6 +123,8 @@ const runner = getRunner();
 function useRunnerEvents(operationNames: string | string[]) {
     const ops = Array.isArray(operationNames) ? operationNames : [operationNames];
     const opsKey = ops.join(',');
+    // 传入 t 以便在完成/出错时输出当前语言的提示
+    const t = useT();
 
     const [running, setRunning] = useState(false);
     const [progress, setProgress] = useState(EMPTY_PROGRESS);
@@ -134,18 +151,21 @@ function useRunnerEvents(operationNames: string | string[]) {
                     setRunning(false);
                     setProgress({
                         percent: 100,
-                        message: data.code === 0 ? 'Completed successfully!' : `Completed with exit code: ${data.code}`,
+                        message: data.code === 0
+                            ? t('common.completedOk')
+                            : t('common.exitCode', { code: data.code }),
                     });
                 }
             }),
             runner.on('nscb-error', (data) => {
                 if (matchesOp(data)) {
+                    // ERROR 前缀保持原样（便于用户识别错误行），消息本身来自后端不翻译
                     setOutputLines(prev => [...prev, `ERROR: ${data.message}`]);
                 }
             }),
         ];
         return () => unsubs.forEach(fn => fn());
-    }, [opsKey]);
+    }, [opsKey, t]);
 
     return { running, progress, outputLines, setRunning, setProgress, setOutputLines };
 }
@@ -182,28 +202,30 @@ function useOutputDir() {
 // ============================================================
 
 const NAV_PAGES = [
-    { id: 'compress', icon: Icons.compress, label: 'Compress' },
-    { id: 'decompress', icon: Icons.decompress, label: 'Decompress' },
-    { id: 'merge', icon: Icons.merge, label: 'Merge' },
-    { id: 'convert', icon: Icons.convert, label: 'Convert' },
-    { id: 'split', icon: Icons.split, label: 'Split' },
-    { id: 'dspl', icon: Icons.dspl, label: 'Split to Files' },
-    { id: 'create', icon: Icons.create, label: 'Create/Repack' },
-    { id: 'info', icon: Icons.info, label: 'Info' },
-    { id: 'rename', icon: Icons.rename, label: 'Rename' },
-    { id: 'batchmerge', icon: Icons.batchMerge, label: 'Batch Merge' },
-    { id: 'verify', icon: Icons.verify, label: 'Verify' },
-    { id: 'settings', icon: Icons.settings, label: 'Settings' },
+    // label 存放 i18n 键而非直接文本
+    { id: 'compress', icon: Icons.compress, labelKey: 'nav.compress' },
+    { id: 'decompress', icon: Icons.decompress, labelKey: 'nav.decompress' },
+    { id: 'merge', icon: Icons.merge, labelKey: 'nav.merge' },
+    { id: 'convert', icon: Icons.convert, labelKey: 'nav.convert' },
+    { id: 'split', icon: Icons.split, labelKey: 'nav.split' },
+    { id: 'dspl', icon: Icons.dspl, labelKey: 'nav.dspl' },
+    { id: 'create', icon: Icons.create, labelKey: 'nav.create' },
+    { id: 'info', icon: Icons.info, labelKey: 'nav.info' },
+    { id: 'rename', icon: Icons.rename, labelKey: 'nav.rename' },
+    { id: 'batchmerge', icon: Icons.batchMerge, labelKey: 'nav.batchmerge' },
+    { id: 'verify', icon: Icons.verify, labelKey: 'nav.verify' },
+    { id: 'settings', icon: Icons.settings, labelKey: 'nav.settings' },
 ];
 
 function Sidebar({ activePage, onNavigate, appVersion, appUpdate }: { activePage: string; onNavigate: (id: string) => void; appVersion: string; appUpdate?: { tag: string; url: string } | null }) {
+    const t = useT();
     return (
         <div className="sidebar">
             <div className="sidebar-brand">
                 <div className="brand-logo">{Icons.switchLogo}</div>
                 <div className="brand-text">
-                    <h1>NSCB Desktop</h1>
-                    <span>v{appVersion}{appUpdate && <>{' | '}<button className="update-link" onClick={() => api.openExternal(appUpdate.url)}>{appUpdate.tag} available</button></>}</span>
+                    <h1>{t('common.appName')}</h1>
+                    <span>v{appVersion}{appUpdate && <>{' | '}<button className="update-link" onClick={() => api.openExternal(appUpdate.url)}>{t('common.available', { tag: appUpdate.tag })}</button></>}</span>
                 </div>
             </div>
             <nav className="sidebar-nav">
@@ -214,13 +236,13 @@ function Sidebar({ activePage, onNavigate, appVersion, appUpdate }: { activePage
                         onClick={() => onNavigate(p.id)}
                     >
                         <span className="nav-icon">{p.icon}</span>
-                        <span className="nav-label">{p.label}</span>
+                        <span className="nav-label">{t(p.labelKey)}</span>
                     </div>
                 ))}
             </nav>
             <div className="sidebar-footer">
                 <span className="footer-dot" />
-                nscb_rust Backend
+                {t('common.backendLabel')}
             </div>
         </div>
     );
@@ -238,10 +260,15 @@ function ExtBadge({ ext }: { ext: string }) {
 function DropZone({ onFiles, accept, hint, allowFolders }: { onFiles: (files: string[]) => void; accept?: string[]; hint?: string; allowFolders?: boolean }) {
     const [dragOver, setDragOver] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
+    const t = useT();
 
     useEffect(() => {
-        const appWindow = getCurrentWebviewWindow();
-        const unlisten = appWindow.onDragDropEvent((event) => {
+        // 非 Tauri 环境（纯 Web 预览）下 getCurrentWebviewWindow() 缺少 internals，
+        // 这里连同取窗口对象一起捕获，避免整个页面崩溃。
+        let unlisten: Promise<UnlistenFn> | null = null;
+        try {
+            const appWindow = getCurrentWebviewWindow();
+            unlisten = appWindow.onDragDropEvent((event) => {
             // Only handle drop events when this DropZone is visible
             if (!ref.current || ref.current.offsetParent === null) return;
             if (event.payload.type === 'over') {
@@ -263,15 +290,19 @@ function DropZone({ onFiles, accept, hint, allowFolders }: { onFiles: (files: st
                     onFiles(paths);
                 }
             }
-        });
-        return () => { unlisten.then(fn => fn()); };
+            });
+        } catch {
+            return;
+        }
+        return () => { if (unlisten) void unlisten.then(fn => fn()); };
     }, [onFiles]);
 
     const handleClick = useCallback(async () => {
-        const filters = accept ? [{ name: 'Files', extensions: accept }] : undefined;
+        // 过滤器名称跟随界面语言
+        const filters = accept ? [{ name: t('setup.switchFiles'), extensions: accept }] : undefined;
         const files = await api.selectFiles(filters);
         if (files.length > 0) onFiles(files);
-    }, [onFiles, accept]);
+    }, [onFiles, accept, t]);
 
     const handleBrowseFolder = useCallback(async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -287,11 +318,12 @@ function DropZone({ onFiles, accept, hint, allowFolders }: { onFiles: (files: st
         >
             <div className="drop-zone-icon">{Icons.upload}</div>
             <div className="drop-zone-text">
-                Drop {allowFolders ? 'files/folders' : 'files'} here or <span className="drop-zone-link">browse</span>
-                {allowFolders && <>{' or '}<span className="drop-zone-link" onClick={handleBrowseFolder}>browse folder</span></>}
+                {t(allowFolders ? 'drop.foldersHere' : 'drop.filesHere')}{' '}
+                <span className="drop-zone-link">{t('common.browse')}</span>
+                {allowFolders && <>{' '}<span className="drop-zone-link" onClick={handleBrowseFolder}>{t('drop.browseFolder')}</span></>}
             </div>
             <div className="drop-zone-hint">
-                {hint || 'Supports NSP, XCI, NSZ, XCZ, NCZ files'}
+                {hint || t('drop.defaultHint')}
             </div>
             {accept && (
                 <div className="drop-zone-badges">
@@ -306,11 +338,14 @@ function DropZone({ onFiles, accept, hint, allowFolders }: { onFiles: (files: st
 
 function FileList({ files, onRemove }: { files: string[]; onRemove: (index: number) => void }) {
     if (files.length === 0) return null;
+    const t = useT();
 
     return (
         <div className="file-list">
             <div className="file-list-header">
-                <span className="file-list-count">{files.length} file{files.length !== 1 ? 's' : ''} selected</span>
+                <span className="file-list-count">
+                    {t('common.filesSelected', { count: files.length, s: pluralSuffix(getLocale(), files.length) })}
+                </span>
             </div>
             {files.map((file, i) => {
                 const ext = getFileExt(file);
@@ -325,7 +360,7 @@ function FileList({ files, onRemove }: { files: string[]; onRemove: (index: numb
                     <button
                         className="file-remove"
                         onClick={() => onRemove(i)}
-                        title="Remove file"
+                        title={t('common.removeFile')}
                     >
                         {Icons.x}
                     </button>
@@ -356,6 +391,7 @@ function getOutputLineClass(line: string): string {
 
 function ProgressDisplay({ progress, outputLines }: { progress: { percent: number; message: string }; outputLines: string[] }) {
     const consoleRef = useRef<HTMLDivElement>(null);
+    const t = useT();
 
     useEffect(() => {
         if (consoleRef.current) {
@@ -374,7 +410,7 @@ function ProgressDisplay({ progress, outputLines }: { progress: { percent: numbe
                 />
             </div>
             <div className="progress-info">
-                <span className="progress-message">{progress.message || 'Waiting...'}</span>
+                <span className="progress-message">{progress.message || t('common.waiting')}</span>
                 <span className={`progress-percent ${isComplete ? 'complete' : ''}`}>
                     {(progress.percent || 0).toFixed(1)}%
                 </span>
@@ -383,6 +419,7 @@ function ProgressDisplay({ progress, outputLines }: { progress: { percent: numbe
                 <div className="output-console" ref={consoleRef}>
                     {outputLines.map((line, i) => (
                         <div key={i} className={`output-line ${getOutputLineClass(line)}`}>
+                            {/* 后端原始输出保持原样，不翻译 */}
                             {line}
                         </div>
                     ))}
@@ -409,50 +446,51 @@ function ToastContainer({ toasts }: { toasts: { id: number; message: string; typ
 }
 
 function OutputDirPicker({ outputDir, setOutputDir, selectOutputDir }: { outputDir: string; setOutputDir: (dir: string) => void; selectOutputDir: () => void }) {
+    const t = useT();
     return (
         <div className="dir-picker">
-            <label className="dir-picker-label">{Icons.folder} Output Directory</label>
+            <label className="dir-picker-label">{Icons.folder} {t('common.outputDir')}</label>
             <div className="dir-picker-row">
                 <input
                     type="text"
                     value={outputDir}
                     onChange={(e) => setOutputDir(e.target.value)}
-                    placeholder="Default: same as source file"
+                    placeholder={t('common.outputDirPlaceholder')}
                 />
-                <button className="btn btn-secondary btn-sm" onClick={selectOutputDir}>
-                    Browse
-                </button>
+                <button className="btn btn-secondary btn-sm" onClick={selectOutputDir}>{t('common.browse')}</button>
             </div>
         </div>
     );
 }
 
-function ActionBar({ running, onCancel, onClear, onStart, startLabel, startDisabled }: {
+function ActionBar({ running, onCancel, onClear, onStart, startLabelKey, startLabelParams, startDisabled }: {
     running: boolean;
     onCancel: () => void;
     onClear: () => void;
     onStart: () => void;
-    startLabel: string;
+    startLabelKey: string;
+    startLabelParams?: Record<string, string | number>;
     startDisabled?: boolean;
 }) {
+    const t = useT();
     return (
         <div className="actions-bar">
             <span className="spacer" />
             {running ? (
                 <button className="btn btn-danger" onClick={onCancel}>
-                    {Icons.stop} Cancel
+                    {Icons.stop} {t('common.cancel')}
                 </button>
             ) : (
                 <>
                     <button className="btn btn-ghost" onClick={onClear}>
-                        {Icons.trash} Clear All
+                        {Icons.trash} {t('common.clearAll')}
                     </button>
                     <button
                         className="btn btn-primary btn-lg"
                         onClick={onStart}
                         disabled={startDisabled}
                     >
-                        {Icons.play} {startLabel}
+                        {Icons.play} {t(startLabelKey, startLabelParams)}
                     </button>
                 </>
             )}
@@ -468,12 +506,13 @@ interface OperationPageConfig {
     op: string;
     icon: React.JSX.Element;
     accent: string;
-    title: string;
-    subtitle: string;
+    // 标题/副标题等改为 i18n 键，便于按当前语言渲染
+    titleKey: string;
+    subtitleKey: string;
     accept: string[];
-    hint: string;
-    startLabel: string;
-    startMessage: string;
+    hintKey: string;
+    startLabelKey: string;
+    startMessageKey: string;
     minFiles?: number;
     renderOptions?: (state: OperationPageState) => React.ReactNode;
     buildRunnerOpts?: (state: OperationPageState) => Record<string, unknown>;
@@ -490,6 +529,7 @@ function OperationPage({ config }: { config: OperationPageConfig }) {
     const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents(config.op);
     const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
     const [options, setOptions] = useState<Record<string, any>>({});
+    const t = useT();
 
     // Always set output dir to first file's directory
     useEffect(() => {
@@ -506,7 +546,7 @@ function OperationPage({ config }: { config: OperationPageConfig }) {
     const handleStart = async () => {
         if (files.length < minFiles) return;
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: config.startMessage });
+        setProgress({ ...EMPTY_PROGRESS, message: t(config.startMessageKey) });
         setOutputLines([]);
         const extraOpts = config.buildRunnerOpts ? config.buildRunnerOpts(state) : {};
         await runner.run(config.op, files, {
@@ -518,7 +558,7 @@ function OperationPage({ config }: { config: OperationPageConfig }) {
     const handleCancel = async () => {
         await runner.cancel();
         setRunning(false);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('common.cancelled') });
     };
 
     const handleClear = () => {
@@ -532,12 +572,12 @@ function OperationPage({ config }: { config: OperationPageConfig }) {
             <div className="page-header">
                 <div className={`page-icon accent-${config.accent}`}>{config.icon}</div>
                 <div>
-                    <h2>{config.title}</h2>
-                    <p>{config.subtitle}</p>
+                    <h2>{t(config.titleKey)}</h2>
+                    <p>{t(config.subtitleKey)}</p>
                 </div>
             </div>
 
-            <DropZone onFiles={addFiles} accept={config.accept} hint={config.hint} />
+            <DropZone onFiles={addFiles} accept={config.accept} hint={t(config.hintKey)} />
             <FileList files={files} onRemove={removeFile} />
 
             {files.length > 0 && (
@@ -555,7 +595,7 @@ function OperationPage({ config }: { config: OperationPageConfig }) {
                         onCancel={handleCancel}
                         onClear={handleClear}
                         onStart={handleStart}
-                        startLabel={config.startLabel}
+                        startLabelKey={config.startLabelKey}
                         startDisabled={files.length < minFiles}
                     />
                 </>
@@ -566,14 +606,15 @@ function OperationPage({ config }: { config: OperationPageConfig }) {
 
 function CompressOptions({ options, setOption }: { options: Record<string, any>; setOption: (k: string, v: any) => void }) {
     const level = options.level ?? 18;
+    const t = useT();
     return (
         <div className="card">
             <div className="card-header">
-                <span className="card-title">Compression Options</span>
+                <span className="card-title">{t('compress.optionsTitle')}</span>
             </div>
             <div className="options-panel">
                 <div className="option-group">
-                    <label className="option-label">Compression Level</label>
+                    <label className="option-label">{t('compress.levelLabel')}</label>
                     <div className="slider-control">
                         <input
                             type="range"
@@ -584,8 +625,8 @@ function CompressOptions({ options, setOption }: { options: Record<string, any>;
                         />
                         <span className="slider-value">{level}</span>
                     </div>
-                    <span className={`level-badge level-${levelLabel(level).toLowerCase()}`}>
-                        {levelLabel(level)}
+                    <span className={`level-badge level-${levelLabelKey(level).replace('level.', '')}`}>
+                        {t(levelLabelKey(level))}
                     </span>
                 </div>
             </div>
@@ -593,27 +634,28 @@ function CompressOptions({ options, setOption }: { options: Record<string, any>;
     );
 }
 
-function FormatOptions({ options, setOption, title, descriptions }: {
+function FormatOptions({ options, setOption, titleKey, descriptions }: {
     options: Record<string, any>;
     setOption: (k: string, v: any) => void;
-    title: string;
-    descriptions: { xci: string; nsp: string };
+    titleKey: string;
+    descriptions: { xciKey: string; nspKey: string };
 }) {
     const format = options.format ?? 'xci';
+    const t = useT();
     return (
         <div className="card">
             <div className="card-header">
-                <span className="card-title">{title}</span>
+                <span className="card-title">{t(titleKey)}</span>
             </div>
             <div className="options-panel">
                 <div className="option-group">
-                    <label className="option-label">Output Format</label>
+                    <label className="option-label">{t('format.outputFormat')}</label>
                     <select value={format} onChange={(e) => setOption('format', e.target.value)}>
-                        <option value="xci">XCI (Game Cartridge)</option>
-                        <option value="nsp">NSP (eShop Package)</option>
+                        <option value="xci">{t('merge.xciDesc')}</option>
+                        <option value="nsp">{t('merge.nspDesc')}</option>
                     </select>
                     <span className="option-description">
-                        {format === 'xci' ? descriptions.xci : descriptions.nsp}
+                        {format === 'xci' ? t(descriptions.xciKey) : t(descriptions.nspKey)}
                     </span>
                 </div>
             </div>
@@ -625,12 +667,12 @@ const COMPRESS_CONFIG: OperationPageConfig = {
     op: 'compress',
     icon: Icons.compress,
     accent: 'compress',
-    title: 'Compress',
-    subtitle: 'Compress NSP/XCI files to NSZ/XCZ format',
+    titleKey: 'compress.title',
+    subtitleKey: 'compress.subtitle',
     accept: ['nsp', 'xci'],
-    hint: 'Drop NSP or XCI files to compress',
-    startLabel: 'Start Compression',
-    startMessage: 'Starting compression...',
+    hintKey: 'compress.hint',
+    startLabelKey: 'compress.startLabel',
+    startMessageKey: 'compress.startMessage',
     renderOptions: (state) => (
         <CompressOptions options={state.options} setOption={state.setOption} />
     ),
@@ -643,12 +685,12 @@ const DECOMPRESS_CONFIG: OperationPageConfig = {
     op: 'decompress',
     icon: Icons.decompress,
     accent: 'decompress',
-    title: 'Decompress',
-    subtitle: 'Decompress NSZ/XCZ/NCZ files back to NSP/XCI format',
+    titleKey: 'decompress.title',
+    subtitleKey: 'decompress.subtitle',
     accept: ['nsz', 'xcz', 'ncz'],
-    hint: 'Drop NSZ, XCZ, or NCZ files to decompress',
-    startLabel: 'Start Decompression',
-    startMessage: 'Starting decompression...',
+    hintKey: 'decompress.hint',
+    startLabelKey: 'decompress.startLabel',
+    startMessageKey: 'decompress.startMessage',
 };
 
 // Merge page is a custom component (not config-driven) — see MergePage below.
@@ -657,18 +699,18 @@ const CONVERT_CONFIG: OperationPageConfig = {
     op: 'convert',
     icon: Icons.convert,
     accent: 'convert',
-    title: 'Convert',
-    subtitle: 'Convert between NSP and XCI formats',
+    titleKey: 'convert.title',
+    subtitleKey: 'convert.subtitle',
     accept: ['nsp', 'xci'],
-    hint: 'Drop NSP or XCI files to convert',
-    startLabel: 'Start Conversion',
-    startMessage: 'Starting conversion...',
+    hintKey: 'convert.hint',
+    startLabelKey: 'convert.startLabel',
+    startMessageKey: 'convert.startMessage',
     renderOptions: (state) => (
         <FormatOptions
             options={state.options}
             setOption={state.setOption}
-            title="Convert Options"
-            descriptions={{ xci: 'Convert NSP \u2192 XCI', nsp: 'Convert XCI \u2192 NSP' }}
+            titleKey="convert.optionsTitle"
+            descriptions={{ xciKey: 'convert.toXci', nspKey: 'convert.toNsp' }}
         />
     ),
     buildRunnerOpts: (state) => ({
@@ -680,30 +722,30 @@ const SPLIT_CONFIG: OperationPageConfig = {
     op: 'split',
     icon: Icons.split,
     accent: 'split',
-    title: 'Split',
-    subtitle: 'Split multi-title files into per-title NCA folders',
+    titleKey: 'split.title',
+    subtitleKey: 'split.subtitle',
     accept: ['nsp', 'xci'],
-    hint: 'Drop NSP or XCI files to split into per-title NCA folders',
-    startLabel: 'Start Split',
-    startMessage: 'Starting split...',
+    hintKey: 'split.hint',
+    startLabelKey: 'split.startLabel',
+    startMessageKey: 'split.startMessage',
 };
 
 const DSPL_CONFIG: OperationPageConfig = {
     op: 'dspl',
     icon: Icons.dspl,
     accent: 'dspl',
-    title: 'Split to Files',
-    subtitle: 'Split multi-title files into individual NSP/XCI files',
+    titleKey: 'dspl.title',
+    subtitleKey: 'dspl.subtitle',
     accept: ['nsp', 'xci'],
-    hint: 'Drop NSP or XCI files to split into individual titles',
-    startLabel: 'Start Split',
-    startMessage: 'Starting split to files...',
+    hintKey: 'dspl.hint',
+    startLabelKey: 'dspl.startLabel',
+    startMessageKey: 'dspl.startMessage',
     renderOptions: (state) => (
         <FormatOptions
             options={state.options}
             setOption={state.setOption}
-            title="Split Options"
-            descriptions={{ xci: 'Output individual XCI files', nsp: 'Output individual NSP files' }}
+            titleKey="dspl.optionsTitle"
+            descriptions={{ xciKey: 'dspl.outXci', nspKey: 'dspl.outNsp' }}
         />
     ),
     buildRunnerOpts: (state) => ({
@@ -722,6 +764,7 @@ function MergePage() {
     const [pv, setPv] = useState(false);
     const [rsvcap, setRsvcap] = useState('');
     const [keypatch, setKeypatch] = useState('');
+    const t = useT();
 
     // Output dir defaults to first file's directory
     useEffect(() => {
@@ -733,7 +776,7 @@ function MergePage() {
     const handleStart = async () => {
         if (!canStart) return;
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Starting merge...' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('merge.startMessage') });
         setOutputLines([]);
         await runner.run('merge', files, {
             output: outputDir || undefined,
@@ -748,7 +791,7 @@ function MergePage() {
     const handleCancel = async () => {
         await runner.cancel();
         setRunning(false);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('common.cancelled') });
     };
 
     const handleClear = () => {
@@ -762,17 +805,17 @@ function MergePage() {
             <div className="page-header">
                 <div className="page-icon accent-merge">{Icons.merge}</div>
                 <div>
-                    <h2>Merge</h2>
-                    <p>Merge, downgrade, or repack Switch files into a single output</p>
+                    <h2>{t('merge.title')}</h2>
+                    <p>{t('merge.subtitle')}</p>
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-header">
-                    <span className="card-title">Input Files</span>
+                    <span className="card-title">{t('merge.inputFiles')}</span>
                 </div>
                 <div style={{ padding: '12px' }}>
-                    <DropZone onFiles={addFiles} accept={['xci', 'nsp', 'nsz', 'xcz']} hint="Drop base game, update, and DLC files" />
+                    <DropZone onFiles={addFiles} accept={['xci', 'nsp', 'nsz', 'xcz']} hint={t('merge.dropHint')} />
                     <FileList files={files} onRemove={removeFile} />
                 </div>
             </div>
@@ -781,46 +824,46 @@ function MergePage() {
                 <>
                     <div className="card">
                         <div className="card-header">
-                            <span className="card-title">Merge Options</span>
+                            <span className="card-title">{t('merge.optionsTitle')}</span>
                         </div>
                         <div className="options-panel">
                             <div className="option-group">
-                                <label className="option-label">Output Format</label>
+                                <label className="option-label">{t('merge.outputFormat')}</label>
                                 <select value={format} onChange={(e) => setFormat(e.target.value)}>
-                                    <option value="xci">XCI (Game Cartridge)</option>
-                                    <option value="nsp">NSP (eShop Package)</option>
+                                    <option value="xci">{t('merge.xciDesc')}</option>
+                                    <option value="nsp">{t('merge.nspDesc')}</option>
                                 </select>
                                 <span className="option-description">
-                                    {format === 'xci' ? 'Single XCI with all content' : 'Single NSP with all content'}
+                                    {format === 'xci' ? t('merge.singleXci') : t('merge.singleNsp')}
                                 </span>
                             </div>
                             <div className="option-group">
-                                <Toggle checked={nodelta} onChange={setNodelta} label="Exclude Delta Fragments" />
-                                <span className="option-description">Skip delta NCA fragments during merge</span>
+                                <Toggle checked={nodelta} onChange={setNodelta} label={t('merge.nodelta')} />
+                                <span className="option-description">{t('merge.nodeltaDesc')}</span>
                             </div>
                             <div className="option-group">
-                                <Toggle checked={pv} onChange={setPv} label="Show Firmware Info" />
-                                <span className="option-description">Print before/after firmware version info during merge</span>
+                                <Toggle checked={pv} onChange={setPv} label={t('merge.pv')} />
+                                <span className="option-description">{t('merge.pvDesc')}</span>
                             </div>
                             <div className="option-group">
-                                <label className="option-label">RSV Cap</label>
+                                <label className="option-label">{t('merge.rsvcap')}</label>
                                 <input
                                     type="text"
                                     value={rsvcap}
                                     onChange={(e) => setRsvcap(e.target.value)}
-                                    placeholder="Optional — caps RequiredSystemVersion"
+                                    placeholder={t('merge.rsvcapPlaceholder')}
                                 />
-                                <span className="option-description">Cap the RequiredSystemVersion to a specific value</span>
+                                <span className="option-description">{t('merge.rsvcapDesc')}</span>
                             </div>
                             <div className="option-group">
-                                <label className="option-label">Key Generation Patch</label>
+                                <label className="option-label">{t('merge.keypatch')}</label>
                                 <input
                                     type="text"
                                     value={keypatch}
                                     onChange={(e) => setKeypatch(e.target.value)}
-                                    placeholder="Optional — lowers NCA key generation"
+                                    placeholder={t('merge.keypatchPlaceholder')}
                                 />
-                                <span className="option-description">Lower NCA key generation to a specific value</span>
+                                <span className="option-description">{t('merge.keypatchDesc')}</span>
                             </div>
                         </div>
                     </div>
@@ -836,7 +879,7 @@ function MergePage() {
                         onCancel={handleCancel}
                         onClear={handleClear}
                         onStart={handleStart}
-                        startLabel="Start Merge"
+                        startLabelKey="merge.startLabel"
                         startDisabled={!canStart}
                     />
                 </>
@@ -852,11 +895,12 @@ function InfoPage() {
     const { files, addFiles, removeFile, clearFiles } = useFileList();
     const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('info');
     const [mode, setMode] = useState<'contentlist' | 'filelist'>('contentlist');
+    const t = useT();
 
     const handleStart = async () => {
         if (files.length === 0) return;
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Fetching info...' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('info.startMessage') });
         setOutputLines([]);
         await runner.run('info', files, { mode });
     };
@@ -864,7 +908,7 @@ function InfoPage() {
     const handleCancel = async () => {
         await runner.cancel();
         setRunning(false);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('common.cancelled') });
     };
 
     const handleClear = () => {
@@ -878,29 +922,29 @@ function InfoPage() {
             <div className="page-header">
                 <div className="page-icon accent-info">{Icons.info}</div>
                 <div>
-                    <h2>Info</h2>
-                    <p>View content details or metadata summary of NSP/XCI files</p>
+                    <h2>{t('info.title')}</h2>
+                    <p>{t('info.subtitle')}</p>
                 </div>
             </div>
 
-            <DropZone onFiles={addFiles} accept={['nsp', 'xci', 'nsz', 'xcz']} hint="Drop NSP, XCI, NSZ, or XCZ files to inspect" />
+            <DropZone onFiles={addFiles} accept={['nsp', 'xci', 'nsz', 'xcz']} hint={t('info.hint')} />
             <FileList files={files} onRemove={removeFile} />
 
             {files.length > 0 && (
                 <>
                     <div className="card">
                         <div className="card-header">
-                            <span className="card-title">Info Mode</span>
+                            <span className="card-title">{t('info.modeTitle')}</span>
                         </div>
                         <div className="options-panel">
                             <div className="option-group">
-                                <label className="option-label">Output Type</label>
+                                <label className="option-label">{t('info.outputType')}</label>
                                 <select value={mode} onChange={(e) => setMode(e.target.value as 'contentlist' | 'filelist')}>
-                                    <option value="contentlist">Content Details</option>
-                                    <option value="filelist">Metadata Summary</option>
+                                    <option value="contentlist">{t('info.contentList')}</option>
+                                    <option value="filelist">{t('info.fileList')}</option>
                                 </select>
                                 <span className="option-description">
-                                    {mode === 'contentlist' ? 'Detailed content listing with title IDs and versions' : 'File-level metadata summary'}
+                                    {mode === 'contentlist' ? t('info.contentDesc') : t('info.metaDesc')}
                                 </span>
                             </div>
                         </div>
@@ -915,7 +959,7 @@ function InfoPage() {
                         onCancel={handleCancel}
                         onClear={handleClear}
                         onStart={handleStart}
-                        startLabel="Get Info"
+                        startLabelKey="info.startLabel"
                     />
                 </>
             )}
@@ -935,6 +979,7 @@ function RenamePage() {
     const [nutdbTitleId, setNutdbTitleId] = useState('');
     const [proxy, setProxy] = useState('');
     const [nutdbUrl, setNutdbUrl] = useState('');
+    const t = useT();
 
     useEffect(() => {
         api.getSetting('proxy').then(setProxy);
@@ -944,7 +989,7 @@ function RenamePage() {
     const handleStart = async () => {
         if (files.length === 0) return;
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Renaming files...' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('rename.startMessage') });
         setOutputLines([]);
         await runner.run('renamef', files, {
             renmode,
@@ -956,7 +1001,7 @@ function RenamePage() {
 
     const handleNutdbRefresh = async () => {
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Refreshing NUTDB cache...' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('rename.refreshMessage') });
         setOutputLines([]);
         const baseUrl = nutdbUrl || 'https://raw.githubusercontent.com/blawar/titledb/master/US.en.json';
         const finalUrl = proxy ? proxy + baseUrl : baseUrl;
@@ -966,7 +1011,7 @@ function RenamePage() {
     const handleNutdbLookup = async () => {
         if (!nutdbTitleId.trim()) return;
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: `Looking up ${nutdbTitleId}...` });
+        setProgress({ ...EMPTY_PROGRESS, message: t('rename.lookupMessage', { id: nutdbTitleId }) });
         setOutputLines([]);
         await runner.run('nutdb-lookup', [], { titleId: nutdbTitleId.trim() });
     };
@@ -974,7 +1019,7 @@ function RenamePage() {
     const handleCancel = async () => {
         await runner.cancel();
         setRunning(false);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('common.cancelled') });
     };
 
     const handleClear = () => {
@@ -988,83 +1033,83 @@ function RenamePage() {
             <div className="page-header">
                 <div className="page-icon accent-rename">{Icons.rename}</div>
                 <div>
-                    <h2>Rename</h2>
-                    <p>Rename Switch files using metadata and NUTDB lookup</p>
+                    <h2>{t('rename.title')}</h2>
+                    <p>{t('rename.subtitle')}</p>
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-header">
-                    <span className="card-title">Input Files / Folders</span>
+                    <span className="card-title">{t('rename.inputTitle')}</span>
                 </div>
                 <div style={{ padding: '12px' }}>
-                    <DropZone onFiles={addFiles} accept={['nsp', 'nsx', 'nsz', 'xci', 'xcz']} hint="Drop files or folders to rename" allowFolders />
+                    <DropZone onFiles={addFiles} accept={['nsp', 'nsx', 'nsz', 'xci', 'xcz']} hint={t('rename.dropHint')} allowFolders />
                     <FileList files={files} onRemove={removeFile} />
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-header">
-                    <span className="card-title">Rename Options</span>
+                    <span className="card-title">{t('rename.optionsTitle')}</span>
                     <div className="card-tab-bar">
-                        <button className={`card-tab-btn${optionsTab === 'basic' ? ' active' : ''}`} onClick={() => setOptionsTab('basic')}>Basic</button>
-                        <button className={`card-tab-btn${optionsTab === 'advanced' ? ' active' : ''}`} onClick={() => setOptionsTab('advanced')}>Advanced</button>
+                        <button className={`card-tab-btn${optionsTab === 'basic' ? ' active' : ''}`} onClick={() => setOptionsTab('basic')}>{t('rename.tabBasic')}</button>
+                        <button className={`card-tab-btn${optionsTab === 'advanced' ? ' active' : ''}`} onClick={() => setOptionsTab('advanced')}>{t('rename.tabAdvanced')}</button>
                     </div>
                 </div>
                 {optionsTab === 'basic' ? (
                     <div className="options-panel">
                         <div className="option-group">
-                            <label className="option-label">Rename Mode</label>
+                            <label className="option-label">{t('rename.renmode')}</label>
                             <select value={renmode} onChange={(e) => setRenmode(e.target.value)}>
-                                <option value="force">Force</option>
-                                <option value="skip_corr_tid">Skip Correct TID</option>
-                                <option value="skip_if_tid">Skip If TID</option>
+                                <option value="force">{t('rename.force')}</option>
+                                <option value="skip_corr_tid">{t('rename.skipCorrTid')}</option>
+                                <option value="skip_if_tid">{t('rename.skipIfTid')}</option>
                             </select>
                             <span className="option-description">
-                                {renmode === 'force' ? 'Always rename files' : renmode === 'skip_corr_tid' ? 'Skip files with correct title ID in name' : 'Skip files that already contain a title ID'}
+                                {renmode === 'force' ? t('rename.modeForceDesc') : renmode === 'skip_corr_tid' ? t('rename.modeSkipCorrDesc') : t('rename.modeSkipIfDesc')}
                             </span>
                         </div>
                         <div className="option-group">
-                            <label className="option-label">Add Language</label>
+                            <label className="option-label">{t('rename.addlangue')}</label>
                             <select value={addlangue} onChange={(e) => setAddlangue(e.target.value)}>
-                                <option value="false">No</option>
-                                <option value="true">Yes</option>
+                                <option value="false">{t('rename.no')}</option>
+                                <option value="true">{t('rename.yes')}</option>
                             </select>
-                            <span className="option-description">Include language information in filename</span>
+                            <span className="option-description">{t('rename.addLangDesc')}</span>
                         </div>
                         <div className="option-group">
-                            <label className="option-label">Version Handling</label>
+                            <label className="option-label">{t('rename.noversion')}</label>
                             <select value={noversion} onChange={(e) => { if (e.target.value !== 'true') lastVersionOnRef.current = e.target.value; setNoversion(e.target.value); }}>
-                                <option value="false">Include version</option>
-                                <option value="true">Exclude version</option>
-                                <option value="xci_no_v0">Exclude v0 for XCI</option>
+                                <option value="false">{t('rename.includeVersion')}</option>
+                                <option value="true">{t('rename.excludeVersion')}</option>
+                                <option value="xci_no_v0">{t('rename.excludeV0Xci')}</option>
                             </select>
                             <span className="option-description">
-                                {noversion === 'false' ? 'Include version number in filename' : noversion === 'true' ? 'Omit version number from filename' : 'Omit v0 for XCI files only'}
+                                {noversion === 'false' ? t('rename.verIncludeDesc') : noversion === 'true' ? t('rename.verExcludeDesc') : t('rename.verExcludeV0Desc')}
                             </span>
                         </div>
                         <div className="option-group">
-                            <label className="option-label">DLC Rename</label>
+                            <label className="option-label">{t('rename.dlcrname')}</label>
                             <select value={dlcrname} onChange={(e) => setDlcrname(e.target.value)}>
-                                <option value="false">No</option>
-                                <option value="true">Yes</option>
-                                <option value="tag">Tag only</option>
+                                <option value="false">{t('rename.no')}</option>
+                                <option value="true">{t('rename.yes')}</option>
+                                <option value="tag">{t('rename.dlcTagMode')}</option>
                             </select>
                             <span className="option-description">
-                                {dlcrname === 'false' ? 'Do not rename DLC files' : dlcrname === 'true' ? 'Rename DLC files with full name' : 'Append DLC tag to filename'}
+                                {dlcrname === 'false' ? t('rename.dlcOff') : dlcrname === 'true' ? t('rename.dlcYes') : t('rename.dlcTag')}
                             </span>
                         </div>
                     </div>
                 ) : (
                     <div style={{ padding: '16px' }}>
                         <div className="fname-parts">
-                            <div className="fname-part fp-locked" title="Always included — Language and DLC naming affect this portion">
+                            <div className="fname-part fp-locked" title={t('rename.lockedHint')}>
                                 Game Name
                                 {addlangue === 'true' && <span className="fname-modifier">+Lang</span>}
                                 {dlcrname !== 'false' && <span className="fname-modifier">+DLC</span>}
                             </div>
                             <span className="fname-sep">·</span>
-                            <div className="fname-part fp-locked" title="Always included">[TitleID]</div>
+                            <div className="fname-part fp-locked" title={t('rename.lockedHint')}>[TitleID]</div>
                             <span className="fname-sep">·</span>
                             <div
                                 className={`fname-part ${noversion !== 'true' ? 'fp-on' : 'fp-off'}`}
@@ -1076,7 +1121,7 @@ function RenamePage() {
                                         setNoversion(lastVersionOnRef.current);
                                     }
                                 }}
-                                title={noversion !== 'true' ? 'Click to exclude version' : 'Click to include version'}
+                                title={noversion !== 'true' ? t('rename.clickExclude') : t('rename.clickInclude')}
                             >
                                 [vVersion]
                             </div>
@@ -1084,44 +1129,44 @@ function RenamePage() {
 
                         <div className="options-panel" style={{ paddingTop: 0 }}>
                             <div className="option-group">
-                                <Toggle checked={addlangue === 'true'} onChange={v => setAddlangue(v ? 'true' : 'false')} label="Language" />
-                                <span className="option-description">Append supported languages to the game name</span>
+                                <Toggle checked={addlangue === 'true'} onChange={v => setAddlangue(v ? 'true' : 'false')} label={t('rename.language')} />
+                                <span className="option-description">{t('rename.langAppendDesc')}</span>
                             </div>
                             <div className="option-group">
-                                <label className="option-label">DLC Naming</label>
+                                <label className="option-label">{t('rename.dlcNaming')}</label>
                                 <div className="seg-ctrl">
-                                    <button className={`seg-btn${dlcrname === 'false' ? ' active' : ''}`} onClick={() => setDlcrname('false')}>Off</button>
-                                    <button className={`seg-btn${dlcrname === 'true' ? ' active' : ''}`} onClick={() => setDlcrname('true')}>Full name</button>
-                                    <button className={`seg-btn${dlcrname === 'tag' ? ' active' : ''}`} onClick={() => setDlcrname('tag')}>Tag mode</button>
+                                    <button className={`seg-btn${dlcrname === 'false' ? ' active' : ''}`} onClick={() => setDlcrname('false')}>{t('rename.dlcOffShort')}</button>
+                                    <button className={`seg-btn${dlcrname === 'true' ? ' active' : ''}`} onClick={() => setDlcrname('true')}>{t('rename.dlcFull')}</button>
+                                    <button className={`seg-btn${dlcrname === 'tag' ? ' active' : ''}`} onClick={() => setDlcrname('tag')}>{t('rename.dlcTagMode')}</button>
                                 </div>
                                 <span className="option-description">
-                                    {dlcrname === 'false' ? 'DLC files are not renamed' : dlcrname === 'true' ? 'DLC files renamed using resolved name from metadata or NUTDB' : 'Resolved name used where available; [DLC N] tag always appended'}
+                                    {dlcrname === 'false' ? t('rename.dlcOffDesc') : dlcrname === 'true' ? t('rename.dlcFullDesc') : t('rename.dlcTagDesc')}
                                 </span>
                             </div>
                             {noversion !== 'true' && (
                                 <div className="option-group">
-                                    <label className="option-label">Version — XCI v0</label>
+                                    <label className="option-label">{t('rename.versionXciV0')}</label>
                                     <select value={noversion} onChange={(e) => { lastVersionOnRef.current = e.target.value; setNoversion(e.target.value); }}>
-                                        <option value="false">Include v0</option>
-                                        <option value="xci_no_v0">Omit v0 for XCI</option>
+                                        <option value="false">{t('rename.includeV0')}</option>
+                                        <option value="xci_no_v0">{t('rename.omitV0')}</option>
                                     </select>
-                                    <span className="option-description">Whether to include v0 in XCI filenames</span>
+                                    <span className="option-description">{t('rename.v0Desc')}</span>
                                 </div>
                             )}
                             <div className="option-group">
-                                <label className="option-label">Rename Mode</label>
+                                <label className="option-label">{t('rename.renmode')}</label>
                                 <select value={renmode} onChange={(e) => setRenmode(e.target.value)}>
-                                    <option value="force">Force</option>
-                                    <option value="skip_corr_tid">Skip Correct TID</option>
-                                    <option value="skip_if_tid">Skip If TID</option>
+                                    <option value="force">{t('rename.force')}</option>
+                                    <option value="skip_corr_tid">{t('rename.skipCorrTid')}</option>
+                                    <option value="skip_if_tid">{t('rename.skipIfTid')}</option>
                                 </select>
                                 <span className="option-description">
-                                    {renmode === 'force' ? 'Always rename files' : renmode === 'skip_corr_tid' ? 'Skip files with correct title ID in name' : 'Skip files that already contain a title ID'}
+                                    {renmode === 'force' ? t('rename.modeForceDesc') : renmode === 'skip_corr_tid' ? t('rename.modeSkipCorrDesc') : t('rename.modeSkipIfDesc')}
                                 </span>
                             </div>
                         </div>
 
-                        <div className="fname-preview-label" style={{ marginTop: 12 }}>Format preview</div>
+                        <div className="fname-preview-label" style={{ marginTop: 12 }}>{t('rename.formatPreview')}</div>
                         <div className="fname-preview">
                             {dlcrname === 'false'
                                 ? <><span>GameName</span>
@@ -1137,7 +1182,7 @@ function RenamePage() {
                         </div>
                         {dlcrname !== 'false' && (
                             <span className="option-description" style={{ display: 'block', marginTop: 6 }}>
-                                Name segment depends on available metadata and rename mode
+                                {t('rename.segmentHint')}
                             </span>
                         )}
                     </div>
@@ -1146,30 +1191,28 @@ function RenamePage() {
 
             <div className="card">
                 <div className="card-header">
-                    <span className="card-title">NUTDB Utilities</span>
+                    <span className="card-title">{t('rename.nutdbTitle')}</span>
                 </div>
                 <div className="options-panel">
                     <div className="option-group">
                         <button className="btn btn-secondary" onClick={handleNutdbRefresh} disabled={running}>
-                            Refresh NUTDB Cache
+                            {t('rename.refreshCache')}
                         </button>
-                        <span className="option-description">Update the local NUTDB title database cache</span>
+                        <span className="option-description">{t('rename.refreshDesc')}</span>
                     </div>
                     <div className="option-group">
-                        <label className="option-label">Title ID Lookup</label>
+                        <label className="option-label">{t('rename.lookupLabel')}</label>
                         <div style={{ display: 'flex', gap: '8px' }}>
                             <input
                                 type="text"
                                 value={nutdbTitleId}
                                 onChange={(e) => setNutdbTitleId(e.target.value)}
-                                placeholder="e.g. 0100F8F0000A2000"
+                                placeholder={t('rename.lookupPlaceholder')}
                                 style={{ flex: 1 }}
                             />
-                            <button className="btn btn-secondary" onClick={handleNutdbLookup} disabled={running || !nutdbTitleId.trim()}>
-                                Lookup
-                            </button>
+                            <button className="btn btn-secondary" onClick={handleNutdbLookup} disabled={running || !nutdbTitleId.trim()}>{t('rename.lookupButton')}</button>
                         </div>
-                        <span className="option-description">Look up a title ID in the NUTDB database</span>
+                        <span className="option-description">{t('rename.lookupDesc')}</span>
                     </div>
                 </div>
             </div>
@@ -1183,7 +1226,7 @@ function RenamePage() {
                 onCancel={handleCancel}
                 onClear={handleClear}
                 onStart={handleStart}
-                startLabel="Start Rename"
+                startLabelKey="rename.startLabel"
                 startDisabled={files.length === 0}
             />
         </div>
@@ -1194,6 +1237,7 @@ function CreatePage() {
     const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('create');
     const { outputDir, setOutputDir, selectOutputDir } = useOutputDir();
     const [inputFolder, setInputFolder] = useState('');
+    const t = useT();
 
     const handleSelectFolder = useCallback(async () => {
         const dir = await api.selectOutputDir();
@@ -1203,7 +1247,7 @@ function CreatePage() {
     const handleStart = async () => {
         if (!inputFolder) return;
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Starting repack...' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('create.startMessage') });
         setOutputLines([]);
         await runner.run('create', [inputFolder], {
             output: outputDir || undefined,
@@ -1213,7 +1257,7 @@ function CreatePage() {
     const handleCancel = async () => {
         await runner.cancel();
         setRunning(false);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('common.cancelled') });
     };
 
     const handleClear = () => {
@@ -1229,32 +1273,30 @@ function CreatePage() {
             <div className="page-header">
                 <div className="page-icon accent-create">{Icons.create}</div>
                 <div>
-                    <h2>Create / Repack</h2>
-                    <p>Repack a split NCA folder back into an NSP file</p>
+                    <h2>{t('create.title')}</h2>
+                    <p>{t('create.subtitle')}</p>
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-header">
-                    <span className="card-title">Input Folder</span>
+                    <span className="card-title">{t('create.inputFolder')}</span>
                 </div>
                 <div className="options-panel">
                     <div className="option-group" style={{ gridColumn: '1 / -1' }}>
-                        <label className="option-label">NCA Source Folder</label>
+                        <label className="option-label">{t('create.sourceFolder')}</label>
                         <div className="dir-picker-row">
                             <input
                                 type="text"
                                 value={inputFolder}
                                 onChange={(e) => setInputFolder(e.target.value)}
-                                placeholder="Select the folder produced by Split..."
+                                placeholder={t('create.sourcePlaceholder')}
                             />
-                            <button className="btn btn-secondary btn-sm" onClick={handleSelectFolder}>
-                                Browse
-                            </button>
+                            <button className="btn btn-secondary btn-sm" onClick={handleSelectFolder}>{t('common.browse')}</button>
                         </div>
                         {inputFolder && (
                             <span className="option-description">
-                                Output: <code>{getFolderName(inputFolder)}.nsp</code>
+                                {t('create.outputIs', { name: `${getFolderName(inputFolder)}.nsp` })}
                             </span>
                         )}
                     </div>
@@ -1274,7 +1316,7 @@ function CreatePage() {
                         onCancel={handleCancel}
                         onClear={handleClear}
                         onStart={handleStart}
-                        startLabel="Start Repack"
+                        startLabelKey="create.startLabel"
                     />
                 </>
             )}
@@ -1290,6 +1332,9 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
     const [proxy, setProxy] = useState('');
     const [nutdbUrl, setNutdbUrl] = useState('');
     const [tempDir, setTempDir] = useState('');
+    // 语言选择：本地 state 驱动下拉，提交时写入 i18n
+    const [language, setLanguage] = useState<Locale>(getLocale());
+    const t = useT();
 
     useEffect(() => {
         api.getInstalledVersion().then(setBackendVersion);
@@ -1299,6 +1344,14 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
         api.getSetting('tempDir').then(setTempDir);
     }, []);
 
+    // 订阅全局语言变化（含语言选择页与后续切换），保持下拉显示同步
+    useEffect(() => subscribeLocale(setLanguage), []);
+
+    const handleChangeLanguage = async (value: Locale) => {
+        setLanguage(value);
+        await setLocale(value);
+    };
+
     const handleCheckUpdate = async () => {
         setCheckingUpdate(true);
         setUpdateStatus(null);
@@ -1306,19 +1359,19 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
             const release = await api.fetchLatestRelease();
             const backendExists = await api.hasBackend();
             if (!release) {
-                setUpdateStatus('Could not reach GitHub. Check your network connection.');
+                setUpdateStatus(t('settings.updateUnreachable'));
             } else if (backendExists && backendVersion && release.tag === backendVersion) {
-                setUpdateStatus(`Already up to date (${backendVersion})`);
+                setUpdateStatus(t('settings.updateUpToDate', { version: backendVersion }));
             } else {
-                setUpdateStatus(`Downloading ${release.tag}...`);
+                setUpdateStatus(t('settings.updateDownloading', { tag: release.tag }));
                 await api.downloadBackend(release.downloadUrl);
                 await api.saveInstalledVersion(release.tag);
                 setBackendVersion(release.tag);
-                setUpdateStatus(`Updated to ${release.tag}`);
+                setUpdateStatus(t('settings.updateUpdated', { tag: release.tag }));
                 onBackendChanged?.();
             }
         } catch (e: any) {
-            setUpdateStatus(`Update failed: ${e.message || e}`);
+            setUpdateStatus(t('settings.updateFailed', { error: e.message || e }));
         } finally {
             setCheckingUpdate(false);
         }
@@ -1329,7 +1382,7 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
         if (result.ok) {
             setBackendVersion(null);
             await api.saveInstalledVersion('');
-            setUpdateStatus('Backend imported manually');
+            setUpdateStatus(t('settings.backendImported'));
             onBackendChanged?.();
         } else if (result.error) {
             setUpdateStatus(result.error);
@@ -1354,19 +1407,37 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
             <div className="page-header">
                 <div className="page-icon accent-settings">{Icons.settings}</div>
                 <div>
-                    <h2>Settings</h2>
-                    <p>Manage backend binary and encryption keys</p>
+                    <h2>{t('settings.title')}</h2>
+                    <p>{t('settings.subtitle')}</p>
                 </div>
             </div>
 
             <div className="settings-grid">
+                {/* 通用：语言 */}
                 <div className="settings-section">
-                    <h3 className="settings-section-title">Tools</h3>
+                    <h3 className="settings-section-title">{t('settings.sectionGeneral')}</h3>
+                    <div className="settings-row">
+                        <div className="settings-row-label">
+                            <h4>{t('settings.languageTitle')}</h4>
+                            <p>{t('settings.languageDesc')}</p>
+                        </div>
+                        <div className="settings-row-control">
+                            <select value={language} onChange={(e) => handleChangeLanguage(e.target.value as Locale)}>
+                                {LOCALES.map(loc => (
+                                    <option key={loc} value={loc}>{LOCALE_META[loc].label}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="settings-section">
+                    <h3 className="settings-section-title">{t('settings.sectionTools')}</h3>
 
                     <div className="settings-row">
                         <div className="settings-row-label">
-                            <h4>Backend Binary (nscb_rust)</h4>
-                            <p>{backendVersion ? `Installed: ${backendVersion}` : 'Unknown version (manually imported)'}</p>
+                            <h4>{t('settings.backendTitle')}</h4>
+                            <p>{backendVersion ? t('settings.backendInstalled', { version: backendVersion }) : t('settings.backendUnknown')}</p>
                         </div>
                         <div className="settings-row-control">
                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -1375,11 +1446,9 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
                                     onClick={handleCheckUpdate}
                                     disabled={checkingUpdate}
                                 >
-                                    {checkingUpdate ? 'Checking...' : 'Check for Update'}
+                                    {checkingUpdate ? t('settings.checking') : t('settings.checkUpdate')}
                                 </button>
-                                <button className="btn btn-ghost btn-sm" onClick={handleImportBackend}>
-                                    Import Manually
-                                </button>
+                                <button className="btn btn-ghost btn-sm" onClick={handleImportBackend}>{t('settings.importManual')}</button>
                             </div>
                             {updateStatus && (
                                 <p style={{ marginTop: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>{updateStatus}</p>
@@ -1389,34 +1458,32 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
 
                     <div className="settings-row">
                         <div className="settings-row-label">
-                            <h4>Encryption Keys</h4>
-                            <p>{keysInstalled ? 'Keys installed' : 'No keys found'}</p>
+                            <h4>{t('settings.keysTitle')}</h4>
+                            <p>{keysInstalled ? t('settings.keysInstalled') : t('settings.keysMissing')}</p>
                         </div>
                         <div className="settings-row-control">
                             <button className="btn btn-secondary btn-sm" onClick={handleImportKeys}>
-                                {Icons.key} Import Keys
+                                {Icons.key} {t('settings.importKeys')}
                             </button>
                         </div>
                     </div>
 
                     <div className="settings-row">
                         <div className="settings-row-label">
-                            <h4>Temporary Directory</h4>
-                            <p>Large working files for compression, decompression, merge, and rename. Leave blank to use the OS default.</p>
+                            <h4>{t('settings.tempTitle')}</h4>
+                            <p>{t('settings.tempDesc')}</p>
                         </div>
                         <div className="settings-row-control">
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <input
                                     type="text"
                                     className="input"
-                                    placeholder="OS default temporary directory"
+                                    placeholder={t('settings.tempPlaceholder')}
                                     value={tempDir}
                                     onChange={(e) => setTempDir(e.target.value)}
                                     onBlur={() => api.saveSetting('tempDir', tempDir.trim())}
                                 />
-                                <button className="btn btn-secondary btn-sm" onClick={handleSelectTempDir}>
-                                    Browse
-                                </button>
+                                <button className="btn btn-secondary btn-sm" onClick={handleSelectTempDir}>{t('common.browse')}</button>
                                 {tempDir && (
                                     <button
                                         className="btn btn-ghost btn-sm"
@@ -1425,7 +1492,7 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
                                             void api.saveSetting('tempDir', '');
                                         }}
                                     >
-                                        Reset
+                                        {t('common.reset')}
                                     </button>
                                 )}
                             </div>
@@ -1434,18 +1501,18 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
                 </div>
 
                 <div className="settings-section">
-                    <h3 className="settings-section-title">Network</h3>
+                    <h3 className="settings-section-title">{t('settings.sectionNetwork')}</h3>
 
                     <div className="settings-row">
                         <div className="settings-row-label">
-                            <h4>Proxy Prefix</h4>
-                            <p>URL prefix for proxying GitHub downloads (e.g. https://gh-proxy.org/)</p>
+                            <h4>{t('settings.proxyTitle')}</h4>
+                            <p>{t('settings.proxyDesc')}</p>
                         </div>
                         <div className="settings-row-control">
                             <input
                                 type="text"
                                 className="input"
-                                placeholder="https://gh-proxy.org/"
+                                placeholder={t('settings.proxyPlaceholder')}
                                 value={proxy}
                                 onChange={(e) => setProxy(e.target.value)}
                                 onBlur={() => api.saveSetting('proxy', proxy.trim())}
@@ -1455,8 +1522,8 @@ function SettingsPage({ onBackendChanged }: { onBackendChanged?: () => void }) {
 
                     <div className="settings-row">
                         <div className="settings-row-label">
-                            <h4>NUTDB Source URL</h4>
-                            <p>Override the default NUTDB title database URL</p>
+                            <h4>{t('settings.nutdbTitle')}</h4>
+                            <p>{t('settings.nutdbDesc')}</p>
                         </div>
                         <div className="settings-row-control">
                             <input
@@ -1488,6 +1555,7 @@ function SetupPage({
 }) {
     const [error, setError] = useState('');
     const [checking, setChecking] = useState(false);
+    const t = useT();
 
     const handleImportKeys = async () => {
         setError('');
@@ -1506,9 +1574,9 @@ function SetupPage({
         <div className="setup-screen">
             <div className="setup-card">
                 <div className="setup-logo">{Icons.switchLogo}</div>
-                <h1 className="setup-title">NSCB Desktop</h1>
+                <h1 className="setup-title">{t('setup.title')}</h1>
                 <p className="setup-subtitle">
-                    One-time setup: import encryption keys
+                    {t('setup.subtitle')}
                 </p>
 
                 <div className="setup-divider" />
@@ -1518,7 +1586,7 @@ function SetupPage({
                         <span className="setup-check-icon">
                             {Icons.key}
                         </span>
-                        <span>Encryption keys (<code>prod.keys</code>)</span>
+                        <span>{t('setup.checkItem', { file: 'prod.keys' })}</span>
                     </div>
                 </div>
 
@@ -1528,7 +1596,7 @@ function SetupPage({
                         onClick={handleImportKeys}
                         disabled={checking}
                     >
-                        {checking ? 'Importing...' : <>{Icons.key} Import Keys File</>}
+                        {checking ? t('setup.importing') : <>{Icons.key} {t('setup.importKeys')}</>}
                     </button>
                 </div>
 
@@ -1539,7 +1607,7 @@ function SetupPage({
                 )}
 
                 <div className="setup-footer">
-                    NSCB Desktop v{appVersion}
+                    {t('common.appName')} v{appVersion}
                 </div>
             </div>
         </div>
@@ -1550,11 +1618,12 @@ function VerifyPage() {
     const { files, addFiles, removeFile, clearFiles } = useFileList();
     const { running, progress, outputLines, setRunning, setProgress, setOutputLines } = useRunnerEvents('verify');
     const [vertype, setVertype] = useState('lv1');
+    const t = useT();
 
     const handleStart = async () => {
         if (files.length === 0) return;
         setRunning(true);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Verifying...' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('verify.startMessage') });
         setOutputLines([]);
         await runner.run('verify', files, { vertype });
     };
@@ -1562,7 +1631,7 @@ function VerifyPage() {
     const handleCancel = async () => {
         await runner.cancel();
         setRunning(false);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: t('common.cancelled') });
     };
 
     const handleClear = () => {
@@ -1571,10 +1640,11 @@ function VerifyPage() {
         setProgress(EMPTY_PROGRESS);
     };
 
-    const vertypeDescriptions: Record<string, string> = {
-        lv1: 'Decryption test only — checks that NCA content can be decrypted with current keys',
-        lv2: 'Signature verification — validates NCA signatures',
-        lv3: 'Full verification — decryption + signature + hash check',
+    // 三个校验级别的说明文本 i18n 键
+    const vertypeDescKeys: Record<string, string> = {
+        lv1: 'verify.lv1Desc',
+        lv2: 'verify.lv2Desc',
+        lv3: 'verify.lv3Desc',
     };
 
     return (
@@ -1582,29 +1652,29 @@ function VerifyPage() {
             <div className="page-header">
                 <div className="page-icon accent-verify">{Icons.verify}</div>
                 <div>
-                    <h2>Verify</h2>
-                    <p>Verify integrity of NSP/XCI/NSZ/XCZ container files</p>
+                    <h2>{t('verify.title')}</h2>
+                    <p>{t('verify.subtitle')}</p>
                 </div>
             </div>
 
-            <DropZone onFiles={addFiles} accept={['nsp', 'nsx', 'nsz', 'xci', 'xcz']} hint="Drop NSP, NSX, NSZ, XCI, or XCZ files to verify" />
+            <DropZone onFiles={addFiles} accept={['nsp', 'nsx', 'nsz', 'xci', 'xcz']} hint={t('verify.hint')} />
             <FileList files={files} onRemove={removeFile} />
 
             {files.length > 0 && (
                 <>
                     <div className="card">
                         <div className="card-header">
-                            <span className="card-title">Verification Level</span>
+                            <span className="card-title">{t('verify.levelTitle')}</span>
                         </div>
                         <div className="options-panel">
                             <div className="option-group">
-                                <label className="option-label">Mode</label>
+                                <label className="option-label">{t('verify.mode')}</label>
                                 <select value={vertype} onChange={(e) => setVertype(e.target.value)}>
-                                    <option value="lv1">Decryption (lv1)</option>
-                                    <option value="lv2">Signature (lv2)</option>
-                                    <option value="lv3">Full (lv3)</option>
+                                    <option value="lv1">{t('verify.lv1')}</option>
+                                    <option value="lv2">{t('verify.lv2')}</option>
+                                    <option value="lv3">{t('verify.lv3')}</option>
                                 </select>
-                                <span className="option-description">{vertypeDescriptions[vertype]}</span>
+                                <span className="option-description">{t(vertypeDescKeys[vertype])}</span>
                             </div>
                         </div>
                     </div>
@@ -1618,7 +1688,7 @@ function VerifyPage() {
                         onCancel={handleCancel}
                         onClear={handleClear}
                         onStart={handleStart}
-                        startLabel="Verify"
+                        startLabelKey="verify.startLabel"
                     />
                 </>
             )}
@@ -1716,6 +1786,10 @@ function BatchMergePage() {
     const [progress, setProgress] = useState(EMPTY_PROGRESS);
     const cancelledRef = useRef(false);
     const gameResolverRef = useRef<((result: 'success' | 'error' | 'cancelled') => void) | null>(null);
+    // t 需要在事件回调中读取，故用 ref 保存最新的翻译函数
+    const t = useT();
+    const tRef = useRef(t);
+    useEffect(() => { tRef.current = t; }, [t]);
 
     useEffect(() => {
         const unsubs = [
@@ -1903,7 +1977,7 @@ function BatchMergePage() {
 
             setCurrentIdx(i);
             setOutputLines([]);
-            setProgress({ ...EMPTY_PROGRESS, message: `Merging: ${game.name}` });
+            setProgress({ ...EMPTY_PROGRESS, message: tRef.current('batch.mergingGame', { name: game.name }) });
             setGames(prev => prev.map((g, idx) => idx === i ? { ...g, status: 'running', message: undefined } : g));
 
             const beforeFiles = await listOutputFileNames();
@@ -1914,7 +1988,7 @@ function BatchMergePage() {
             });
 
             if (result === 'cancelled') {
-                setGames(prev => prev.map((g, idx) => idx === i ? { ...g, status: 'pending', message: 'Cancelled' } : g));
+                setGames(prev => prev.map((g, idx) => idx === i ? { ...g, status: 'pending', message: tRef.current('common.cancelled') } : g));
                 break;
             }
 
@@ -1935,7 +2009,7 @@ function BatchMergePage() {
                     }
                 }
                 setGames(prev => prev.map((g, idx) => idx === i
-                    ? { ...g, status: 'error', outputFile: renamedFile, message: 'Merge failed' }
+                    ? { ...g, status: 'error', outputFile: renamedFile, message: tRef.current('batch.mergeFailed') }
                     : g));
             } else {
                 setGames(prev => prev.map((g, idx) => idx === i
@@ -1947,7 +2021,7 @@ function BatchMergePage() {
         setRunning(false);
         setCurrentIdx(-1);
         if (!cancelledRef.current) {
-            setProgress({ percent: 100, message: 'Batch merge complete!' });
+            setProgress({ percent: 100, message: tRef.current('batch.complete') });
         }
     };
 
@@ -1960,14 +2034,14 @@ function BatchMergePage() {
         }
         await runner.cancel();
         setRunning(false);
-        setProgress({ ...EMPTY_PROGRESS, message: 'Cancelled' });
+        setProgress({ ...EMPTY_PROGRESS, message: tRef.current('common.cancelled') });
     };
 
     const handleToggleGame = (idx: number) => {
         if (running) return;
         setGames(prev => prev.map((g, i) => {
             if (i !== idx) return g;
-            if (g.status === 'pending') return { ...g, status: 'skipped', message: 'Manually skipped' };
+            if (g.status === 'pending') return { ...g, status: 'skipped', message: tRef.current('batch.manualSkipped') };
             if (g.status === 'skipped') return { ...g, status: 'pending', message: undefined };
             return g;
         }));
@@ -1990,64 +2064,64 @@ function BatchMergePage() {
             <div className="page-header">
                 <div className="page-icon accent-batchmerge">{Icons.batchMerge}</div>
                 <div>
-                    <h2>Batch Merge</h2>
-                    <p>Auto-merge all games in a folder, skipping already-merged titles</p>
+                    <h2>{t('batch.title')}</h2>
+                    <p>{t('batch.subtitle')}</p>
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-header">
-                    <span className="card-title">Folders</span>
+                    <span className="card-title">{t('batch.foldersTitle')}</span>
                 </div>
                 <div className="options-panel">
                     <div className="option-group">
-                        <label className="option-label">Base Folder</label>
+                        <label className="option-label">{t('batch.baseFolder')}</label>
                         <div className="dir-picker-row">
                             <input
                                 type="text"
                                 value={baseFolder}
                                 onChange={e => setBaseFolder(e.target.value)}
-                                placeholder="Folder containing game subfolders..."
+                                placeholder={t('batch.basePlaceholder')}
                                 readOnly={running}
                             />
-                            <button className="btn btn-secondary btn-sm" onClick={handleSelectBaseFolder} disabled={running}>Browse</button>
+                            <button className="btn btn-secondary btn-sm" onClick={handleSelectBaseFolder} disabled={running}>{t('common.browse')}</button>
                         </div>
-                        <span className="option-description">Each subfolder is treated as one game (base + updates + DLC)</span>
+                        <span className="option-description">{t('batch.baseDesc')}</span>
                     </div>
                     <div className="option-group">
                         <label className="option-label">
-                            Output Folder <span className="required-star">*</span>
+                            {t('batch.outputFolder')} <span className="required-star">*</span>
                         </label>
                         <div className="dir-picker-row">
                             <input
                                 type="text"
                                 value={outputDir}
                                 onChange={e => setOutputDir(e.target.value)}
-                                placeholder="Required — all merged outputs go here"
+                                placeholder={t('batch.outputPlaceholder')}
                                 readOnly={running}
                             />
-                            <button className="btn btn-secondary btn-sm" onClick={handleSelectOutputDir} disabled={running}>Browse</button>
+                            <button className="btn btn-secondary btn-sm" onClick={handleSelectOutputDir} disabled={running}>{t('common.browse')}</button>
                         </div>
-                        <span className="option-description">Merged files are saved here. Existing outputs are checked to skip already-merged games.</span>
+                        <span className="option-description">{t('batch.outputDesc')}</span>
                     </div>
                 </div>
             </div>
 
             <div className="card">
                 <div className="card-header">
-                    <span className="card-title">Merge Options</span>
+                    <span className="card-title">{t('batch.optionsTitle')}</span>
                 </div>
                 <div className="options-panel">
                     <div className="option-group">
-                        <label className="option-label">Output Format</label>
+                        <label className="option-label">{t('merge.outputFormat')}</label>
                         <select value={format} onChange={e => setFormat(e.target.value)} disabled={running}>
-                            <option value="xci">XCI (Game Cartridge)</option>
-                            <option value="nsp">NSP (eShop Package)</option>
+                            <option value="xci">{t('merge.xciDesc')}</option>
+                            <option value="nsp">{t('merge.nspDesc')}</option>
                         </select>
                     </div>
                     <div className="option-group">
-                        <Toggle checked={nodelta} onChange={setNodelta} label="Exclude Delta Fragments" />
-                        <span className="option-description">Skip delta NCA fragments during merge</span>
+                        <Toggle checked={nodelta} onChange={setNodelta} label={t('merge.nodelta')} />
+                        <span className="option-description">{t('merge.nodeltaDesc')}</span>
                     </div>
                 </div>
             </div>
@@ -2058,15 +2132,15 @@ function BatchMergePage() {
                     onClick={handleScan}
                     disabled={!baseFolder || !outputDir || scanning || running}
                 >
-                    {scanning ? 'Scanning...' : 'Scan Folder'}
+                    {scanning ? t('batch.scanning') : t('batch.scan')}
                 </button>
                 {games.length > 0 && (
                     <span className="batch-summary">
-                        {games.length} game{games.length !== 1 ? 's' : ''} found
-                        {' · '}{pendingCount} to merge
-                        {skippedCount > 0 && ` · ${skippedCount} already merged`}
-                        {doneCount > 0 && ` · ${doneCount} done`}
-                        {errorCount > 0 && ` · ${errorCount} failed`}
+                        {t('batch.summaryFound', { count: games.length, s: pluralSuffix(getLocale(), games.length) })}
+                        {' · '}{t('batch.summaryToMerge', { count: pendingCount })}
+                        {skippedCount > 0 && ` · ${t('batch.summaryAlreadyMerged', { count: skippedCount })}`}
+                        {doneCount > 0 && ` · ${t('batch.summaryDone', { count: doneCount })}`}
+                        {errorCount > 0 && ` · ${t('batch.summaryFailed', { count: errorCount })}`}
                     </span>
                 )}
             </div>
@@ -2074,8 +2148,8 @@ function BatchMergePage() {
             {games.length > 0 && (
                 <div className="card">
                     <div className="card-header">
-                        <span className="card-title">Discovered Games</span>
-                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>{games.length} found</span>
+                        <span className="card-title">{t('batch.gamesTitle')}</span>
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>{t('batch.foundCount', { count: games.length })}</span>
                     </div>
                     <div className="batch-game-list">
                         {games.map((game, i) => {
@@ -2085,21 +2159,21 @@ function BatchMergePage() {
                                 key={game.path}
                                 className={`batch-game-row status-${game.status}${i === currentIdx ? ' current' : ''}${toggleable ? ' toggleable' : ''}`}
                                 onClick={toggleable ? () => handleToggleGame(i) : undefined}
-                                title={toggleable ? (game.status === 'pending' ? 'Click to skip' : 'Click to include') : undefined}
+                                title={toggleable ? (game.status === 'pending' ? t('batch.clickSkip') : t('batch.clickInclude')) : undefined}
                             >
                                 <span className={`batch-status-badge status-${game.status}`}>
-                                    {game.status === 'pending' ? 'Pending'
-                                        : game.status === 'skipped' ? 'Skipped'
-                                        : game.status === 'running' ? 'Running…'
-                                        : game.status === 'done' ? 'Done'
-                                        : 'Error'}
+                                    {game.status === 'pending' ? t('batch.statusPending')
+                                        : game.status === 'skipped' ? t('batch.statusSkipped')
+                                        : game.status === 'running' ? t('batch.statusRunning')
+                                        : game.status === 'done' ? t('batch.statusDone')
+                                        : t('batch.statusError')}
                                 </span>
                                 <div className="batch-game-info">
                                     <span className="batch-game-name">{game.name}</span>
                                     {game.outputFile && <span className="batch-game-output">{game.outputFile}</span>}
                                     {game.message && !game.outputFile && <span className="batch-game-message">{game.message}</span>}
                                 </div>
-                                <span className="batch-game-count">{game.files.length} file{game.files.length !== 1 ? 's' : ''}</span>
+                                <span className="batch-game-count">{t('batch.fileCount', { count: game.files.length, s: pluralSuffix(getLocale(), game.files.length) })}</span>
                             </div>
                             );
                         })}
@@ -2117,7 +2191,8 @@ function BatchMergePage() {
                     onCancel={handleCancel}
                     onClear={handleClear}
                     onStart={handleStart}
-                    startLabel={`Start Batch Merge (${pendingCount})`}
+                    startLabelKey="batch.startLabel"
+                    startLabelParams={{ count: pendingCount }}
                     startDisabled={!outputDir || pendingCount === 0}
                 />
             )}
@@ -2126,13 +2201,73 @@ function BatchMergePage() {
 }
 
 function MissingBackendBanner({ onGoToSettings }: { onGoToSettings: () => void }) {
+    const t = useT();
     return (
         <div className="missing-backend-banner">
             {Icons.alertCircle}
-            <span><strong>nscb_rust backend</strong> is missing. Go to Settings &gt; Tools to download or import it.</span>
+            <span>{t('banner.missing', { backend: 'nscb_rust' })}</span>
             <button className="btn btn-secondary btn-sm" onClick={onGoToSettings}>
-                Open Settings
+                {t('banner.openSettings')}
             </button>
+        </div>
+    );
+}
+
+// ============================================================
+// Language Picker Page
+// ============================================================
+
+function LanguagePickerPage({ onConfirm }: { onConfirm: () => void }) {
+    // 默认选中简体中文，并立即以该语言渲染本页，保证高亮与文案一致
+    const [selected, setSelected] = useState<Locale>('zh-CN');
+    const t = useT();
+
+    useEffect(() => { previewLocale('zh-CN'); }, []);
+
+    // 点选即预览该语言，界面立即跟随
+    const handleSelect = (locale: Locale) => {
+        setSelected(locale);
+        previewLocale(locale);
+    };
+
+    const handleConfirm = async () => {
+        // 确认时才持久化，然后进入主流程
+        await setLocale(selected);
+        onConfirm();
+    };
+
+    return (
+        <div className="setup-screen">
+            <div className="setup-card">
+                <div className="setup-logo">{Icons.switchLogo}</div>
+                <h1 className="setup-title">{t('common.appName')}</h1>
+                <p className="setup-subtitle">{t('lang.title')}</p>
+
+                <div className="setup-divider" />
+
+                <div className="lang-list">
+                    {LOCALES.map(loc => (
+                        <button
+                            key={loc}
+                            className={`lang-option${selected === loc ? ' selected' : ''}`}
+                        onClick={() => handleSelect(loc)}
+                        >
+                            <span className="lang-native">{LOCALE_META[loc].nativeName}</span>
+                            <span className="lang-label">{LOCALE_META[loc].label}</span>
+                        </button>
+                    ))}
+                </div>
+
+                <div className="setup-actions" style={{ marginTop: 'var(--space-xl)' }}>
+                <button className="btn btn-primary btn-lg setup-btn" onClick={handleConfirm} autoFocus>
+                        {t('lang.confirm')}
+                    </button>
+                </div>
+
+                <div className="setup-footer">
+                    {t('lang.subtitle')}
+                </div>
+            </div>
         </div>
     );
 }
@@ -2173,6 +2308,8 @@ export default function App() {
     const [loading, setLoading] = useState(true);
     const [appVersion, setAppVersion] = useState('0.0.0');
     const [appUpdate, setAppUpdate] = useState<{ tag: string; url: string } | null>(null);
+    // 是否已选择过界面语言：未选择时先显示语言选择页
+    const [languageChosen, setLanguageChosen] = useState<boolean | null>(null);
 
     function applySetupState(state: { dir: string | null; keys: boolean; backend: boolean }) {
         setToolsDir(state.dir);
@@ -2183,6 +2320,9 @@ export default function App() {
     useEffect(() => {
         (async () => {
             await runner.init();
+            // 先确定语言，再加载其余状态，保证首屏即为所选语言
+            await initI18n();
+            setLanguageChosen((await loadSavedLocale()) !== null);
             const ver = await getVersion().catch(() => '0.0.0');
             setAppVersion(ver);
             applySetupState(await checkSetupState());
@@ -2202,6 +2342,7 @@ export default function App() {
             setToasts(prev => prev.filter(t => t.id !== id));
         }, 4000);
     }, []);
+    const t = useT();
 
     useEffect(() => {
         const unsub = runner.on('nscb-error', (data) => {
@@ -2214,7 +2355,7 @@ export default function App() {
         const state = await checkSetupState();
         applySetupState(state);
         if (state.dir) runner.setToolsDir(state.dir);
-        addToast('Ready to go!', 'success');
+        addToast(t('common.ready'), 'success');
     };
 
     const refreshBackendState = async () => {
@@ -2227,13 +2368,22 @@ export default function App() {
             <div className="setup-screen">
                 <div className="setup-card">
                     <div className="setup-logo loading">{Icons.switchLogo}</div>
-                    <h1 className="setup-title">Loading...</h1>
+                    <h1 className="setup-title">{t('common.loading')}</h1>
                 </div>
             </div>
         );
     }
 
-    if (!toolsDir || !hasKeysState) {
+    // 首次启动：尚未选择语言时先让用户选择
+    if (languageChosen === false) {
+        return <LanguagePickerPage onConfirm={() => setLanguageChosen(true)} />;
+    }
+
+    // 纯 Web 预览（无 Tauri 桥）时允许跳过密钥向导，便于检查界面渲染。
+    // 正常桌面环境下 __TAURI_INTERNALS__ 始终存在，此分支不会触发。
+    const isPureWebPreview = typeof (window as any).__TAURI_INTERNALS__ === 'undefined';
+
+    if ((!toolsDir || !hasKeysState) && !(isPureWebPreview && (window as any).__NSCB_SKIP_WIZARD__)) {
         return (
             <>
                 <SetupPage onComplete={handleSetupComplete} appVersion={appVersion} />

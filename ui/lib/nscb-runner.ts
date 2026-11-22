@@ -151,40 +151,52 @@ export class NscbRunner extends Emitter {
         if (this._ready) return;
         if (this.initPromise) return this.initPromise;
 
+        // 在非 Tauri 环境（如纯 Vite 预览/CI）中 invoke/listen 会一直挂起，
+        // 这里加超时保护，超时后降级为无后端状态，让界面仍可渲染。
+        const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
+            Promise.race([
+                p,
+                new Promise<T>((_, reject) => setTimeout(() => reject(new Error('tauri bridge timeout')), ms)),
+            ]);
+
         this.initPromise = (async () => {
         try {
-            this.toolsDir = await invoke<string>('get_tools_dir');
+            this.toolsDir = await withTimeout(invoke<string>('get_tools_dir'), 1500);
         } catch {
             this.toolsDir = 'tools';
         }
 
-        if (this.backendUnlisten.length === 0) {
-            this.backendUnlisten.push(await listen<StdoutPayload>('nscb-stdout', (event) => {
-                const { op, line } = event.payload;
-                this.lastOutputLine = line;
-                this.emit('output', { op, line });
-                this.parseLine(op, line);
-            }));
+        try {
+            if (this.backendUnlisten.length === 0) {
+                this.backendUnlisten.push(await withTimeout(listen<StdoutPayload>('nscb-stdout', (event) => {
+                    const { op, line } = event.payload;
+                    this.lastOutputLine = line;
+                    this.emit('output', { op, line });
+                    this.parseLine(op, line);
+                }), 1500));
 
-            this.backendUnlisten.push(await listen<StderrPayload>('nscb-stderr', (event) => {
-                const { op, chunk } = event.payload;
+                this.backendUnlisten.push(await withTimeout(listen<StderrPayload>('nscb-stderr', (event) => {
+                    const { op, chunk } = event.payload;
                 const clean = this.normalizeProgressText(chunk);
                 const trimmed = clean.trim();
                 if (trimmed) {
                     this.lastOutputLine = trimmed;
                 }
-                this.parseStderrChunk(op, clean);
-            }));
+                    this.parseStderrChunk(op, clean);
+                }), 1500));
 
-            this.backendUnlisten.push(await listen<DonePayload>('nscb-done', (event) => {
-                const { op, code } = event.payload;
+                this.backendUnlisten.push(await withTimeout(listen<DonePayload>('nscb-done', (event) => {
+                    const { op, code } = event.payload;
                 if (this.currentOperation === op) {
                     this.childProcess = null;
                     const resolve = this.doneResolver;
                     this.doneResolver = null;
                     if (resolve) resolve(code);
                 }
-            }));
+                }), 1500));
+            }
+        } catch {
+            // 监听注册失败（非 Tauri 环境）时忽略，界面仍可静态渲染
         }
 
         this._ready = true;
